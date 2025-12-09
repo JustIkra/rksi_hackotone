@@ -11,11 +11,12 @@ Tests cover:
 - Access control and error cases
 """
 
+import asyncio
 import io
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -185,7 +186,7 @@ async def test_upload_report_invalid_mime_type(
     THEN returns 415 Unsupported Media Type
     """
     files = [create_mock_docx_upload(
-        filename="document.pdf",
+        filename="document.docx",  # Valid extension but wrong MIME
         content=b"%PDF-1.4",
         content_type="application/pdf",
     )]
@@ -196,7 +197,8 @@ async def test_upload_report_invalid_mime_type(
     )
 
     assert response.status_code == 415
-    assert "unsupported" in response.json()["detail"].lower()
+    detail = response.json()["detail"].lower()
+    assert "unsupported" in detail or "mime" in detail
 
 
 @pytest.mark.unit
@@ -321,8 +323,11 @@ async def test_list_participant_reports_multiple(
     WHEN getting reports list
     THEN returns all reports ordered by upload time (newest first)
     """
-    # Create 3 reports
+    from datetime import timedelta
+
+    # Create 3 reports with explicit timestamps to ensure ordering
     reports = []
+    base_time = datetime.now(UTC)
     for i in range(3):
         file_ref = FileRef(
             id=uuid.uuid4(),
@@ -338,6 +343,7 @@ async def test_list_participant_reports_multiple(
             participant_id=participant.id,
             status=["UPLOADED", "EXTRACTED", "FAILED"][i],
             file_ref_id=file_ref.id,
+            uploaded_at=base_time + timedelta(seconds=i),  # Explicit ordering
         )
         db_session.add(file_ref)
         db_session.add(report)
@@ -352,12 +358,11 @@ async def test_list_participant_reports_multiple(
     assert data["total"] == 3
     assert len(data["items"]) == 3
 
-    # Verify order (newest first)
+    # Verify order (newest first, so reverse of creation order)
     items = data["items"]
-    # In our test, reports are created in order, so last is newest
-    assert items[0]["status"] == "FAILED"
-    assert items[1]["status"] == "EXTRACTED"
-    assert items[2]["status"] == "UPLOADED"
+    assert items[0]["status"] == "FAILED"  # Last created (i=2)
+    assert items[1]["status"] == "EXTRACTED"  # Middle (i=1)
+    assert items[2]["status"] == "UPLOADED"  # First created (i=0)
 
 
 @pytest.mark.unit
@@ -491,7 +496,7 @@ async def test_delete_report_success(
     assert response.status_code == 204
 
     # Verify database cleanup
-    await db_session.expire_all()
+    db_session.expire_all()  # Not async
     from sqlalchemy import select
     from app.db.models import Report, FileRef
 
@@ -588,7 +593,7 @@ async def test_extract_report_triggers_task(
     """
     report, file_ref, file_path = report_with_file
 
-    # Mock Celery task
+    # Mock Celery task - delay() is synchronous
     mock_task = MagicMock()
     mock_task.id = "test-task-id-123"
     mock_delay.return_value = mock_task
@@ -608,7 +613,7 @@ async def test_extract_report_triggers_task(
     assert call_args[0][0] == str(report.id)  # First positional arg is report_id
 
     # Verify status updated to PROCESSING
-    await db_session.expire(report)
+    db_session.expire(report)  # Not async
     await db_session.refresh(report)
     assert report.status == "PROCESSING"
 
@@ -660,13 +665,14 @@ async def test_concurrent_uploads_same_participant(
     files2 = [create_mock_docx_upload(filename="report2.docx")]
 
     # Submit both requests
-    import asyncio
     responses = await asyncio.gather(
         user_client.post(f"/api/participants/{participant.id}/reports", files=files1),
         user_client.post(f"/api/participants/{participant.id}/reports", files=files2),
     )
 
-    assert all(r.status_code == 201 for r in responses)
+    # Verify both uploads succeeded
+    for r in responses:
+        assert r.status_code == 201, f"Upload failed with status {r.status_code}: {r.json()}"
 
     # Verify both reports exist
     list_response = await user_client.get(f"/api/participants/{participant.id}/reports")
@@ -693,7 +699,7 @@ async def test_report_status_lifecycle(
     report.status = "PROCESSING"
     await db_session.commit()
 
-    await db_session.expire(report)
+    db_session.expire(report)  # Not async
     await db_session.refresh(report)
     assert report.status == "PROCESSING"
 
@@ -702,7 +708,7 @@ async def test_report_status_lifecycle(
     report.extracted_at = datetime.now(UTC)
     await db_session.commit()
 
-    await db_session.expire(report)
+    db_session.expire(report)  # Not async
     await db_session.refresh(report)
     assert report.status == "EXTRACTED"
     assert report.extracted_at is not None
@@ -767,8 +773,8 @@ async def test_upload_with_max_allowed_size(
     THEN succeeds
     """
     max_size = settings.report_max_size_bytes
-    # Create content at exactly max size
-    content = b"PK\x03\x04" + b"X" * (max_size - 8)
+    # Create content at exactly max size (8 bytes for PK header)
+    content = b"PK\x03\x04" + b"X" * (max_size - 4)
 
     files = [create_mock_docx_upload(content=content)]
 
@@ -779,4 +785,5 @@ async def test_upload_with_max_allowed_size(
 
     assert response.status_code == 201
     data = response.json()
-    assert data["file_ref"]["size_bytes"] == max_size
+    # The file size should match the content length
+    assert data["file_ref"]["size_bytes"] == len(content)

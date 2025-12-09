@@ -43,7 +43,7 @@ async def register(
     New users must be approved by an administrator before they can access the system.
 
     **Flow:**
-    1. User registers with email and password
+    1. User registers with email, password, and optional full_name (ФИО)
     2. Account is created with status=PENDING
     3. Admin approves the user via `/admin/approve`
     4. User can now log in
@@ -53,7 +53,7 @@ async def register(
     - 422: Invalid email or weak password
     """
     try:
-        user = await create_user(db, request.email, request.password)
+        user = await create_user(db, request.email, request.password, full_name=request.full_name)
         return UserResponse.model_validate(user)
 
     except ValueError as e:

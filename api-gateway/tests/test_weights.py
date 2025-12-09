@@ -97,7 +97,7 @@ async def test_upload_weight_table_requires_admin(
     }
 
     response = await client.post(
-        "/api/weights/upload",
+        "/api/admin/weights/upload",
         json=payload,
         headers=get_auth_header(active_user),
     )
@@ -114,7 +114,7 @@ async def test_list_weight_tables_requires_admin(
     from tests.conftest import get_auth_header
 
     response = await client.get(
-        "/api/weights",
+        "/api/admin/weights",
         headers=get_auth_header(active_user),
     )
 
@@ -139,7 +139,7 @@ async def test_update_weight_table_requires_admin(
     }
 
     response = await client.put(
-        f"/api/weights/{weight_table_developer.id}",
+        f"/api/admin/weights/{weight_table_developer.id}",
         json=payload,
         headers=get_auth_header(active_user),
     )
@@ -165,7 +165,7 @@ async def test_upload_weight_table_success(
         "metadata": {"version": "1.0", "author": "admin"},
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -195,7 +195,7 @@ async def test_upload_weight_table_with_exact_decimal_sum(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -222,7 +222,7 @@ async def test_upload_weight_table_updates_existing(
         "metadata": {"version": "2.0", "updated_by": "admin"},
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -250,7 +250,7 @@ async def test_upload_weight_table_sum_not_one_rejected(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422  # Pydantic validation error
     error_data = response.json()
@@ -271,7 +271,7 @@ async def test_upload_weight_table_sum_exceeds_one_rejected(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422
     error_data = response.json()
@@ -288,7 +288,7 @@ async def test_upload_weight_table_empty_weights_rejected(
         "weights": [],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422
 
@@ -306,7 +306,7 @@ async def test_upload_weight_table_zero_weight_rejected(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422
 
@@ -324,7 +324,7 @@ async def test_upload_weight_table_negative_weight_rejected(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422
 
@@ -341,7 +341,7 @@ async def test_upload_weight_table_weight_exceeds_one_rejected(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 422
 
@@ -360,7 +360,7 @@ async def test_upload_weight_table_invalid_prof_activity(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 400
     error_data = response.json()
@@ -374,7 +374,7 @@ async def test_list_weight_tables_empty(
     admin_client: AsyncClient,
 ) -> None:
     """Listing weight tables when none exist returns empty list."""
-    response = await admin_client.get("/api/weights")
+    response = await admin_client.get("/api/admin/weights")
 
     assert response.status_code == 200
     data = response.json()
@@ -387,7 +387,7 @@ async def test_list_weight_tables_success(
     weight_table_developer: WeightTable,
 ) -> None:
     """Admin can list all weight tables."""
-    response = await admin_client.get("/api/weights")
+    response = await admin_client.get("/api/admin/weights")
 
     assert response.status_code == 200
     data = response.json()
@@ -424,7 +424,7 @@ async def test_list_weight_tables_multiple(
         metadata=None,
     )
 
-    response = await admin_client.get("/api/weights")
+    response = await admin_client.get("/api/admin/weights")
 
     assert response.status_code == 200
     data = response.json()
@@ -466,7 +466,7 @@ async def test_list_weight_tables_filter_by_prof_activity(
 
     # Filter by developer
     response = await admin_client.get(
-        "/api/weights",
+        "/api/admin/weights",
         params={"prof_activity_code": prof_activity_developer.code},
     )
 
@@ -481,7 +481,7 @@ async def test_list_weight_tables_filter_invalid_activity(
 ) -> None:
     """Filtering by non-existent activity returns error."""
     response = await admin_client.get(
-        "/api/weights",
+        "/api/admin/weights",
         params={"prof_activity_code": "nonexistent"},
     )
 
@@ -509,7 +509,7 @@ async def test_update_weight_table_success(
     }
 
     response = await admin_client.put(
-        f"/api/weights/{weight_table_developer.id}",
+        f"/api/admin/weights/{weight_table_developer.id}",
         json=payload,
     )
 
@@ -541,7 +541,7 @@ async def test_update_weight_table_invalid_sum(
     }
 
     response = await admin_client.put(
-        f"/api/weights/{weight_table_developer.id}",
+        f"/api/admin/weights/{weight_table_developer.id}",
         json=payload,
     )
 
@@ -563,7 +563,7 @@ async def test_update_weight_table_not_found(
     }
 
     response = await admin_client.put(
-        f"/api/weights/{non_existent_id}",
+        f"/api/admin/weights/{non_existent_id}",
         json=payload,
     )
 
@@ -586,7 +586,7 @@ async def test_update_weight_table_cannot_change_activity(
     }
 
     response = await admin_client.put(
-        f"/api/weights/{weight_table_developer.id}",
+        f"/api/admin/weights/{weight_table_developer.id}",
         json=payload,
     )
 
@@ -610,7 +610,7 @@ async def test_upload_weight_table_single_metric(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -635,7 +635,7 @@ async def test_upload_weight_table_many_metrics(
         "weights": weights,
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -660,7 +660,7 @@ async def test_upload_weight_table_without_metadata(
         # No metadata field
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -681,7 +681,7 @@ async def test_upload_weight_table_with_high_precision_decimals(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 201
     data = response.json()
@@ -705,7 +705,7 @@ async def test_upload_weight_table_duplicate_metric_codes_allowed(
         ],
     }
 
-    response = await admin_client.post("/api/weights/upload", json=payload)
+    response = await admin_client.post("/api/admin/weights/upload", json=payload)
 
     # Currently accepted - adjust if business rules change
     assert response.status_code == 201
@@ -728,7 +728,7 @@ async def test_upload_weight_table_unauthenticated(
         ],
     }
 
-    response = await client.post("/api/weights/upload", json=payload)
+    response = await client.post("/api/admin/weights/upload", json=payload)
 
     assert response.status_code == 401
 
@@ -737,7 +737,7 @@ async def test_list_weight_tables_unauthenticated(
     client: AsyncClient,
 ) -> None:
     """Unauthenticated requests are rejected."""
-    response = await client.get("/api/weights")
+    response = await client.get("/api/admin/weights")
 
     assert response.status_code == 401
 
@@ -756,7 +756,7 @@ async def test_update_weight_table_unauthenticated(
     }
 
     response = await client.put(
-        f"/api/weights/{weight_table_developer.id}",
+        f"/api/admin/weights/{weight_table_developer.id}",
         json=payload,
     )
 

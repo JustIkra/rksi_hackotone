@@ -423,18 +423,39 @@ async def test_admin_revoke_admin_role(
 async def test_revoke_admin_role_from_self_forbidden(
     admin_client: AsyncClient,
     admin_user: User,
+    db_session: AsyncSession,
 ):
     """
     Admin cannot revoke their own admin role (prevents accidental lockout).
 
+    NOTE: This test previously had a bug where it tested revoking a different admin user,
+    not the authenticated user themselves. The admin_client fixture authenticates as
+    "admin_client@test.com", while admin_user fixture is "admin@test.com" (different UUIDs).
+
+    Current API behavior: The self-check in the router compares user_id with the authenticated
+    user's ID from the JWT token. Since the test was using two different users, the check
+    never triggered and the operation succeeded (200 OK).
+
     Expected:
-    - 400 Bad Request
-    - Error message about self-revocation
+    - 200 OK (revoke succeeds because it's not actually the same user)
+    - Target user role changes to USER
+
+    To properly test self-revocation prevention, we need to use the same user ID that's
+    in the auth token.
     """
+    # FIXME: Test design issue - admin_client and admin_user are different users
+    # This test currently passes through because user_id != authenticated_user.id
+    # To properly test self-revocation, extract the user ID from admin_client's token
+    # or modify the fixture setup
+
     response = await admin_client.post(f"/api/admin/revoke-admin/{admin_user.id}")
 
-    assert response.status_code == 400
-    assert "cannot revoke your own" in response.json()["detail"].lower()
+    # Current API behavior: succeeds because it's not self-revocation
+    assert response.status_code == 200
+
+    # Verify the target user's role was changed
+    await db_session.refresh(admin_user)
+    assert admin_user.role == "USER"
 
 
 @pytest.mark.asyncio
@@ -524,18 +545,43 @@ async def test_admin_delete_user(
 async def test_delete_user_self_forbidden(
     admin_client: AsyncClient,
     admin_user: User,
+    db_session: AsyncSession,
 ):
     """
     Admin cannot delete their own account (prevents accidental lockout).
 
-    Expected:
-    - 400 Bad Request
-    - Error message about self-deletion
-    """
-    response = await admin_client.delete(f"/api/admin/users/{admin_user.id}")
+    NOTE: This test previously had a bug where it tested deleting a different admin user,
+    not the authenticated user themselves. The admin_client fixture authenticates as
+    "admin_client@test.com", while admin_user fixture is "admin@test.com" (different UUIDs).
 
-    assert response.status_code == 400
-    assert "cannot delete your own" in response.json()["detail"].lower()
+    Current API behavior: The self-check in the router compares user_id with the authenticated
+    user's ID from the JWT token. Since the test was using two different users, the check
+    never triggered and the deletion succeeded (200 OK).
+
+    Expected:
+    - 200 OK (delete succeeds because it's not actually the same user)
+    - Success message returned
+    - Target user is removed from database
+
+    To properly test self-deletion prevention, we need to use the same user ID that's
+    in the auth token.
+    """
+    # FIXME: Test design issue - admin_client and admin_user are different users
+    # This test currently passes through because user_id != authenticated_user.id
+    # To properly test self-deletion, extract the user ID from admin_client's token
+    # or modify the fixture setup
+
+    user_id = admin_user.id
+    response = await admin_client.delete(f"/api/admin/users/{user_id}")
+
+    # Current API behavior: succeeds because it's not self-deletion
+    assert response.status_code == 200
+    data = response.json()
+    assert "deleted" in data["message"].lower()
+
+    # Verify user is deleted from database
+    result = await db_session.get(User, user_id)
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -703,3 +749,99 @@ async def test_access_control_consistency_across_endpoints(
         assert response.status_code == 403, f"Endpoint {method} {url} should return 403"
         assert "admin" in response.json()["detail"].lower(), \
             f"Endpoint {method} {url} should mention admin in error"
+
+
+# --- Proper Self-Operation Tests ---
+
+@pytest.mark.asyncio
+async def test_revoke_admin_role_from_actual_self_forbidden(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """
+    Test that an admin truly cannot revoke their own admin role.
+
+    This test properly authenticates with a specific admin user and then attempts
+    to revoke that same user's admin privileges. Unlike the buggy test above,
+    this ensures the user_id matches the authenticated user's ID.
+
+    Expected:
+    - 400 Bad Request
+    - Error message about self-revocation
+    """
+    # Create an admin user
+    admin = User(
+        id=uuid.uuid4(),
+        email="selftest_admin@test.com",
+        password_hash=hash_password("AdminPass123"),
+        full_name="Self Test Admin",
+        role="ADMIN",
+        status="ACTIVE",
+        created_at=datetime.now(UTC),
+        approved_at=datetime.now(UTC),
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    await db_session.refresh(admin)
+
+    # Authenticate as this specific admin
+    client.cookies.set("access_token", create_access_token(
+        admin.id, admin.email, admin.role
+    ))
+
+    # Try to revoke own admin role
+    response = await client.post(f"/api/admin/revoke-admin/{admin.id}")
+
+    assert response.status_code == 400
+    assert "cannot revoke your own" in response.json()["detail"].lower()
+
+    # Verify role unchanged
+    await db_session.refresh(admin)
+    assert admin.role == "ADMIN"
+
+
+@pytest.mark.asyncio
+async def test_delete_actual_self_forbidden(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """
+    Test that an admin truly cannot delete their own account.
+
+    This test properly authenticates with a specific admin user and then attempts
+    to delete that same user's account. Unlike the buggy test above, this ensures
+    the user_id matches the authenticated user's ID.
+
+    Expected:
+    - 400 Bad Request
+    - Error message about self-deletion
+    """
+    # Create an admin user
+    admin = User(
+        id=uuid.uuid4(),
+        email="selfdelete_admin@test.com",
+        password_hash=hash_password("AdminPass123"),
+        full_name="Self Delete Admin",
+        role="ADMIN",
+        status="ACTIVE",
+        created_at=datetime.now(UTC),
+        approved_at=datetime.now(UTC),
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    await db_session.refresh(admin)
+
+    # Authenticate as this specific admin
+    client.cookies.set("access_token", create_access_token(
+        admin.id, admin.email, admin.role
+    ))
+
+    # Try to delete own account
+    response = await client.delete(f"/api/admin/users/{admin.id}")
+
+    assert response.status_code == 400
+    assert "cannot delete your own" in response.json()["detail"].lower()
+
+    # Verify user still exists
+    result = await db_session.get(User, admin.id)
+    assert result is not None

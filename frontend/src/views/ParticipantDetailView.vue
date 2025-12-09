@@ -141,7 +141,8 @@
                       :image-size="60"
                     />
                   </div>
-                  <div class="score-section">
+                  <!-- Статус генерации рекомендаций (сами рекомендации доступны только в PDF) -->
+                  <div class="score-section recommendations-status-section">
                     <h5>
                       Рекомендации:
                       <el-tag
@@ -153,83 +154,92 @@
                         {{ formatRecommendationStatus(result.recommendations_status) }}
                       </el-tag>
                     </h5>
-                    <template v-if="hasReadyRecommendations(result)">
-                      <ul>
-                        <li
-                          v-for="(rec, idx) in result.recommendations"
-                          :key="idx"
-                          class="recommendation-item"
-                        >
-                          <strong>{{ rec.title }}</strong>
-                          <div
-                            v-if="rec.skill_focus"
-                            class="recommendation-skill-focus"
-                          >
-                            <strong>Навык:</strong> {{ rec.skill_focus }}
-                          </div>
-                          <div
-                            v-if="rec.development_advice"
-                            class="recommendation-advice"
-                          >
-                            {{ rec.development_advice }}
-                          </div>
-                          <div
-                            v-if="rec.recommended_formats && rec.recommended_formats.length > 0"
-                            class="recommendation-formats"
-                          >
-                            <strong>Рекомендуемые форматы:</strong>
-                            <ul class="formats-list">
-                              <li
-                                v-for="(format, fmtIdx) in rec.recommended_formats"
-                                :key="fmtIdx"
-                              >
-                                {{ format }}
-                              </li>
-                            </ul>
-                          </div>
-                        </li>
-                      </ul>
-                    </template>
+                    <!-- Генерация в процессе -->
                     <el-alert
-                      v-else-if="result.recommendations_status === 'pending'"
-                      title="Рекомендации формируются. Обновите страницу через пару минут."
+                      v-if="result.recommendations_status === 'pending'"
                       type="info"
                       :closable="false"
                       show-icon
-                    />
+                    >
+                      <template #title>
+                        <div class="recommendations-pending-alert">
+                          <el-icon class="is-loading">
+                            <Refresh />
+                          </el-icon>
+                          <span>Рекомендации формируются...</span>
+                        </div>
+                      </template>
+                      <template #default>
+                        Кнопка «Скачать PDF» станет доступна после завершения генерации.
+                      </template>
+                    </el-alert>
+                    <!-- Рекомендации готовы -->
+                    <el-alert
+                      v-else-if="result.recommendations_status === 'ready'"
+                      title="Рекомендации готовы"
+                      type="success"
+                      :closable="false"
+                      show-icon
+                    >
+                      <template #default>
+                        Персональные рекомендации доступны в итоговом PDF-отчёте.
+                      </template>
+                    </el-alert>
+                    <!-- Ошибка генерации -->
                     <el-alert
                       v-else-if="result.recommendations_status === 'error'"
                       :title="getRecommendationErrorTitle(result)"
                       type="error"
                       :closable="false"
                       show-icon
-                    />
+                    >
+                      <template #default>
+                        Не удалось сформировать рекомендации. Попробуйте пересчитать пригодность.
+                      </template>
+                    </el-alert>
+                    <!-- Генерация отключена -->
                     <el-alert
                       v-else-if="result.recommendations_status === 'disabled'"
-                      title="Генерация рекомендаций отключена для данного окружения."
+                      title="Генерация рекомендаций отключена"
                       type="warning"
                       :closable="false"
                       show-icon
-                    />
+                    >
+                      <template #default>
+                        Генерация рекомендаций отключена для данного окружения.
+                      </template>
+                    </el-alert>
+                    <!-- Нет данных -->
                     <el-empty
                       v-else
-                      description="Нет данных"
+                      description="Статус рекомендаций неизвестен"
                       :image-size="60"
                     />
                   </div>
                 </div>
+                <!-- Кнопка скачивания PDF (заблокирована при pending/error) -->
                 <div
                   v-if="result.prof_activity_code"
                   class="final-report-actions"
                 >
-                  <el-button
-                    type="primary"
-                    size="small"
-                    @click="downloadFinalReportPdf(result)"
+                  <el-tooltip
+                    :disabled="canDownloadPdf(result)"
+                    :content="getPdfButtonTooltip(result)"
+                    placement="top"
                   >
-                    <el-icon><Download /></el-icon>
-                    Скачать PDF
-                  </el-button>
+                    <span>
+                      <el-button
+                        type="primary"
+                        size="small"
+                        :disabled="!canDownloadPdf(result)"
+                        :loading="result.recommendations_status === 'pending'"
+                        @click="downloadFinalReportPdf(result)"
+                      >
+                        <el-icon v-if="result.recommendations_status !== 'pending'"><Download /></el-icon>
+                        {{ result.recommendations_status === 'pending' ? 'Формируется...' : 'Скачать PDF' }}
+                      </el-button>
+                    </span>
+                  </el-tooltip>
                 </div>
               </div>
             </el-card>
@@ -240,38 +250,91 @@
       <!-- Upload Dialog -->
       <el-dialog
         v-model="showUploadDialog"
-        title="Загрузить отчёт"
-        width="500px"
+        title="Загрузить отчёты"
+        width="600px"
+        @close="resetBatchUpload"
       >
-        <el-form
-          ref="uploadFormRef"
-          :model="uploadForm"
-          :rules="uploadRules"
-          label-position="top"
+        <el-upload
+          ref="uploadRef"
+          :auto-upload="false"
+          multiple
+          accept=".docx"
+          :on-change="handleBatchFileChange"
+          :show-file-list="false"
+          drag
         >
-          <el-form-item
-            label="Файл (DOCX)"
-            prop="file"
+          <el-icon class="el-icon--upload">
+            <Upload />
+          </el-icon>
+          <div class="el-upload__text">
+            Перетащите файлы сюда или <em>нажмите для выбора</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              Только .docx файлы, макс. 20 МБ, до 10 файлов
+            </div>
+          </template>
+        </el-upload>
+
+        <!-- Batch files list -->
+        <div
+          v-if="batchFiles.length"
+          class="batch-files-list"
+        >
+          <div class="batch-files-header">
+            Выбрано файлов: {{ batchFiles.length }}/{{ MAX_FILES_COUNT }}
+          </div>
+          <div
+            v-for="item in batchFiles"
+            :key="item.id"
+            class="batch-file-item"
+            :class="'batch-file-item--' + item.status"
           >
-            <el-upload
-              ref="uploadRef"
-              :auto-upload="false"
-              :limit="1"
-              accept=".docx"
-              :on-change="handleFileChange"
-              :file-list="fileList"
+            <el-icon
+              v-if="item.status === 'pending'"
+              class="batch-file-icon"
             >
-              <el-button type="primary">
-                Выбрать файл
-              </el-button>
-              <template #tip>
-                <div class="el-upload__tip">
-                  Только файлы DOCX, максимум 20 МБ
-                </div>
-              </template>
-            </el-upload>
-          </el-form-item>
-        </el-form>
+              <Document />
+            </el-icon>
+            <el-icon
+              v-else-if="item.status === 'uploading'"
+              class="batch-file-icon is-loading"
+            >
+              <Loading />
+            </el-icon>
+            <el-icon
+              v-else-if="item.status === 'success'"
+              class="batch-file-icon batch-file-icon--success"
+            >
+              <CircleCheck />
+            </el-icon>
+            <el-icon
+              v-else-if="item.status === 'error'"
+              class="batch-file-icon batch-file-icon--error"
+            >
+              <CircleClose />
+            </el-icon>
+
+            <div class="batch-file-info">
+              <span class="batch-file-name">{{ item.name }}</span>
+              <span class="batch-file-size">{{ formatFileSize(item.size) }}</span>
+              <span
+                v-if="item.error"
+                class="batch-file-error"
+              >{{ item.error }}</span>
+            </div>
+
+            <el-button
+              v-if="item.status === 'pending' || item.status === 'error'"
+              type="danger"
+              :icon="Delete"
+              circle
+              size="small"
+              @click="removeBatchFile(item.id)"
+            />
+          </div>
+        </div>
+
         <template #footer>
           <el-button @click="showUploadDialog = false">
             Отмена
@@ -279,9 +342,10 @@
           <el-button
             type="primary"
             :loading="uploading"
-            @click="handleUpload"
+            :disabled="!batchFiles.some(f => f.status === 'pending')"
+            @click="uploadAllFiles"
           >
-            Загрузить
+            Загрузить все ({{ batchFiles.filter(f => f.status === 'pending').length }})
           </el-button>
         </template>
       </el-dialog>
@@ -376,16 +440,18 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   Upload,
   Download,
-  DataAnalysis,
-  View,
   Delete,
   TrendCharts,
   Refresh,
-  DataLine
+  DataLine,
+  Document,
+  Loading,
+  CircleCheck,
+  CircleClose
 } from '@element-plus/icons-vue'
 import AppLayout from '@/components/AppLayout.vue'
 import MetricsEditor from '@/components/MetricsEditor.vue'
@@ -394,7 +460,6 @@ import ParticipantMetricsDrawer from '@/components/ParticipantMetricsDrawer.vue'
 import { useParticipantsStore } from '@/stores'
 import { reportsApi, profActivitiesApi, scoringApi, participantsApi, metricsApi } from '@/api'
 import { formatFromApi } from '@/utils/numberFormat'
-import { getMetricDisplayName } from '@/utils/metricNames'
 
 const router = useRouter()
 const route = useRoute()
@@ -403,7 +468,6 @@ const participantsStore = useParticipantsStore()
 const loading = ref(false)
 const loadingReports = ref(false)
 const loadingActivities = ref(false)
-const loadingMetrics = ref(false)
 const uploading = ref(false)
 const calculating = ref(false)
 
@@ -412,7 +476,6 @@ const reports = ref([])
 const scoringResults = ref([])
 const profActivities = ref([])
 const metricDefs = ref([])
-const currentMetrics = ref([])
 const currentReportId = ref(null)
 const refreshInterval = ref(null)
 const recommendationsRefreshInterval = ref(null)
@@ -433,15 +496,12 @@ const showScoringDialog = ref(false)
 const showMetricsDialog = ref(false)
 const showMetricsDrawer = ref(false)
 
-const uploadFormRef = ref(null)
+const uploadRef = ref(null)
 const fileList = ref([])
-const uploadForm = reactive({
-  file: null
-})
 
-const uploadRules = {
-  file: [{ required: true, message: 'Выберите файл', trigger: 'change' }]
-}
+// Batch upload state
+const batchFiles = ref([])
+let fileIdCounter = 0
 
 const scoringForm = reactive({
   activityCode: ''
@@ -459,26 +519,6 @@ const formatDate = (dateStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
-}
-
-const formatStatus = (status) => {
-  const statuses = {
-    UPLOADED: 'Загружен',
-    PROCESSING: 'Извлечение метрик...',
-    EXTRACTED: 'Метрики извлечены',
-    FAILED: 'Ошибка'
-  }
-  return statuses[status] || status
-}
-
-const getStatusType = (status) => {
-  const types = {
-    UPLOADED: 'info',
-    PROCESSING: 'warning',
-    EXTRACTED: 'success',
-    FAILED: 'danger'
-  }
-  return types[status] || 'info'
 }
 
 const getScoreStatus = (score) => {
@@ -505,32 +545,6 @@ const getRecommendationStatusType = (status) => {
     disabled: 'warning'
   }
   return types[status] || 'info'
-}
-
-const getConfidenceColor = (confidence) => {
-  if (confidence >= 0.8) return 'var(--el-color-success)'
-  if (confidence >= 0.6) return 'var(--el-color-warning)'
-  return 'var(--el-color-danger)'
-}
-
-// Get metric name by code
-const warnedMetricCodes = new Set()
-
-const getMetricName = (metricCode) => {
-  if (!metricCode) return '—'
-  const metricDef = metricDefs.value.find(m => m.code === metricCode)
-
-  const logger =
-    warnedMetricCodes.has(metricCode)
-      ? { warn: () => {} }
-      : {
-          warn: (message) => {
-            warnedMetricCodes.add(metricCode)
-            console.warn(message)
-          }
-        }
-
-  return getMetricDisplayName(metricDef, metricCode, logger)
 }
 
 // Load data
@@ -616,37 +630,126 @@ const loadMetricDefs = async () => {
   }
 }
 
-// File upload
-const handleFileChange = (file) => {
-  uploadForm.file = file.raw
-  fileList.value = [file]
+// File upload - Batch support
+const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB
+const MAX_FILES_COUNT = 10
+
+const formatFileSize = (bytes) => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-const handleUpload = async () => {
-  if (!uploadFormRef.value) return
+const validateFile = (file) => {
+  // Check extension
+  if (!file.name.toLowerCase().endsWith('.docx')) {
+    return 'Только файлы формата .docx'
+  }
+  // Check size
+  if (file.size > MAX_FILE_SIZE) {
+    return `Размер файла превышает ${formatFileSize(MAX_FILE_SIZE)}`
+  }
+  return null
+}
 
-  await uploadFormRef.value.validate(async (valid) => {
-    if (!valid) return
+const handleBatchFileChange = (uploadFile, _uploadFiles) => {
+  const file = uploadFile.raw
 
-    if (!uploadForm.file) {
-      ElMessage.error('Выберите файл')
-      return
+  // Check total count
+  if (batchFiles.value.length >= MAX_FILES_COUNT) {
+    ElMessage.warning(`Максимальное количество файлов: ${MAX_FILES_COUNT}`)
+    // Remove the file from el-upload's internal list
+    if (uploadRef.value) {
+      uploadRef.value.clearFiles()
     }
+    return
+  }
 
-    uploading.value = true
-    try {
-      await reportsApi.upload(route.params.id, uploadForm.file)
-      ElMessage.success('Отчёт загружен успешно')
-      showUploadDialog.value = false
-      uploadForm.file = null
-      fileList.value = []
-      await loadReports()
-    } catch (error) {
-      ElMessage.error('Ошибка загрузки отчёта')
-    } finally {
-      uploading.value = false
+  // Validate file
+  const error = validateFile(file)
+  if (error) {
+    ElMessage.error(error)
+    // Remove the file from el-upload's internal list
+    if (uploadRef.value) {
+      uploadRef.value.clearFiles()
     }
+    return
+  }
+
+  // Add to batch
+  batchFiles.value.push({
+    id: ++fileIdCounter,
+    file: file,
+    name: file.name,
+    size: file.size,
+    status: 'pending', // 'pending' | 'uploading' | 'success' | 'error'
+    progress: 0,
+    error: null,
+    reportId: null
   })
+
+  // Clear el-upload's file list to allow more selections
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
+}
+
+const removeBatchFile = (id) => {
+  batchFiles.value = batchFiles.value.filter(f => f.id !== id)
+}
+
+const uploadSingleFile = async (item) => {
+  item.status = 'uploading'
+  item.progress = 0
+  try {
+    const response = await reportsApi.upload(route.params.id, item.file)
+    item.status = 'success'
+    item.reportId = response.id
+  } catch (err) {
+    item.status = 'error'
+    item.error = err.response?.data?.detail || 'Ошибка загрузки'
+  }
+}
+
+const uploadAllFiles = async () => {
+  const pending = batchFiles.value.filter(f => f.status === 'pending')
+
+  if (pending.length === 0) {
+    ElMessage.warning('Нет файлов для загрузки')
+    return
+  }
+
+  uploading.value = true
+  try {
+    // Upload all files in parallel
+    await Promise.allSettled(
+      pending.map(item => uploadSingleFile(item))
+    )
+
+    // Show summary message
+    const successCount = batchFiles.value.filter(f => f.status === 'success').length
+    const errorCount = batchFiles.value.filter(f => f.status === 'error').length
+
+    if (errorCount === 0) {
+      ElMessage.success(`Загружено ${successCount} отчётов`)
+      showUploadDialog.value = false
+      resetBatchUpload()
+    } else {
+      ElMessage.warning(`Загружено: ${successCount}, ошибок: ${errorCount}`)
+    }
+
+    await loadReports()
+  } finally {
+    uploading.value = false
+  }
+}
+
+const resetBatchUpload = () => {
+  batchFiles.value = []
+  fileList.value = []
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
 }
 
 // Report actions
@@ -745,26 +848,6 @@ const handleMetricsUpdated = async () => {
   ElMessage.success('Метрики обновлены')
 }
 
-const confirmDeleteReport = (report) => {
-  ElMessageBox.confirm(
-    'Вы уверены, что хотите удалить этот отчёт?',
-    'Подтверждение удаления',
-    {
-      confirmButtonText: 'Удалить',
-      cancelButtonText: 'Отмена',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      await reportsApi.delete(report.id)
-      ElMessage.success('Отчёт удалён')
-      await loadReports()
-    } catch (error) {
-      ElMessage.error('Ошибка удаления отчёта')
-    }
-  }).catch(() => {})
-}
-
 const handleDeleteReport = async (reportId) => {
   try {
     await reportsApi.delete(reportId)
@@ -843,12 +926,20 @@ const downloadFinalReportPdf = async (result) => {
   }
 }
 
-const hasReadyRecommendations = (result) => {
-  return (
-    result?.recommendations_status === 'ready' &&
-    Array.isArray(result?.recommendations) &&
-    result.recommendations.length > 0
-  )
+// Проверка возможности скачивания PDF (только при ready статусе)
+const canDownloadPdf = (result) => {
+  return result?.recommendations_status === 'ready' || result?.recommendations_status === 'disabled'
+}
+
+// Текст подсказки для заблокированной кнопки PDF
+const getPdfButtonTooltip = (result) => {
+  if (result?.recommendations_status === 'pending') {
+    return 'Дождитесь завершения генерации рекомендаций'
+  }
+  if (result?.recommendations_status === 'error') {
+    return 'Ошибка генерации рекомендаций. Попробуйте пересчитать пригодность'
+  }
+  return ''
 }
 
 const getRecommendationErrorTitle = (result) => {
@@ -947,6 +1038,20 @@ onUnmounted(() => {
   margin-left: 8px;
 }
 
+.recommendations-status-section {
+  min-width: 300px;
+}
+
+.recommendations-pending-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recommendations-pending-alert .el-icon {
+  font-size: 16px;
+}
+
 .score-section ul {
   margin: 0;
   padding-left: 20px;
@@ -959,38 +1064,6 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 
-.recommendation-item {
-  margin-bottom: 16px;
-}
-
-.recommendation-skill-focus {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--color-text-regular);
-}
-
-.recommendation-advice {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  line-height: 1.5;
-}
-
-.recommendation-formats {
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--color-text-regular);
-}
-
-.recommendation-formats .formats-list {
-  margin: 5px 0 0 20px;
-  padding: 0;
-  list-style-type: disc;
-}
-
-.recommendation-formats .formats-list li {
-  margin-top: 4px;
-}
 
 .final-report-actions {
   margin-top: 20px;
@@ -1043,6 +1116,74 @@ onUnmounted(() => {
   float: right;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+/* Batch upload styles */
+.batch-files-list {
+  margin-top: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.batch-files-header {
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--el-text-color-primary);
+}
+
+.batch-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  background: var(--el-fill-color-light);
+}
+
+.batch-file-item--success {
+  background: var(--el-color-success-light-9);
+}
+
+.batch-file-item--error {
+  background: var(--el-color-danger-light-9);
+}
+
+.batch-file-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.batch-file-icon--success {
+  color: var(--el-color-success);
+}
+
+.batch-file-icon--error {
+  color: var(--el-color-danger);
+}
+
+.batch-file-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.batch-file-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-file-size {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.batch-file-error {
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 
 @media (max-width: 768px) {

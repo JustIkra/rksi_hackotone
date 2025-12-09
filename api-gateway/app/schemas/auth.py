@@ -16,6 +16,7 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., min_length=8, max_length=100, description="User password")
+    full_name: str | None = Field(None, min_length=1, max_length=255, description="User full name (ФИО) - optional")
 
     @field_validator("password")
     @classmethod
@@ -34,7 +35,7 @@ class RegisterRequest(BaseModel):
         return v
 
     model_config = {
-        "json_schema_extra": {"example": {"email": "user@example.com", "password": "password123"}}
+        "json_schema_extra": {"example": {"email": "user@example.com", "password": "password123", "full_name": "Иванов Иван Иванович"}}
     }
 
 

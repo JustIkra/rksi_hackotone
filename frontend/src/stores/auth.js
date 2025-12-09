@@ -17,11 +17,11 @@ export const useAuthStore = defineStore('auth', () => {
   const isActive = computed(() => user.value?.status === 'ACTIVE')
   const displayName = computed(() => user.value?.full_name || user.value?.email)
 
-  async function register(email, password) {
+  async function register(email, password, fullName = null) {
     loading.value = true
     error.value = null
     try {
-      const data = await authApi.register(email, password)
+      const data = await authApi.register(email, password, fullName)
       return data
     } catch (err) {
       const normalized = normalizeApiError(err, 'Ошибка регистрации')

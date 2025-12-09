@@ -9,9 +9,14 @@ export const authApi = {
    * Регистрация нового пользователя
    * @param {string} email
    * @param {string} password
+   * @param {string|null} fullName - ФИО (необязательно)
    */
-  async register(email, password) {
-    const response = await apiClient.post('/auth/register', { email, password })
+  async register(email, password, fullName = null) {
+    const payload = { email, password }
+    if (fullName) {
+      payload.full_name = fullName
+    }
+    const response = await apiClient.post('/auth/register', payload)
     return response.data
   },
 

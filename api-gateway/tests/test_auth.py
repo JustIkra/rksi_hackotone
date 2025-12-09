@@ -46,9 +46,51 @@ async def test_register_success(client: AsyncClient, db_session: AsyncSession):
     assert data["email"] == "newuser@test.com"
     assert data["role"] == "USER"
     assert data["status"] == "PENDING"
+    assert data["full_name"] is None  # ФИО не указано
     assert "id" in data
     assert "password" not in data
     assert "password_hash" not in data
+
+
+@pytest.mark.integration
+async def test_register_with_full_name(client: AsyncClient, db_session: AsyncSession):
+    """Test successful user registration with full_name (ФИО)."""
+    # Arrange
+    request_data = {
+        "email": "newuser_fio@test.com",
+        "password": "SecurePass123",
+        "full_name": "Иванов Иван Иванович",
+    }
+
+    # Act
+    response = await client.post("/api/auth/register", json=request_data)
+
+    # Assert
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "newuser_fio@test.com"
+    assert data["full_name"] == "Иванов Иван Иванович"
+    assert data["role"] == "USER"
+    assert data["status"] == "PENDING"
+
+
+@pytest.mark.integration
+async def test_register_without_full_name(client: AsyncClient, db_session: AsyncSession):
+    """Test registration without full_name still works (optional field)."""
+    # Arrange
+    request_data = {
+        "email": "newuser_no_fio@test.com",
+        "password": "SecurePass123",
+    }
+
+    # Act
+    response = await client.post("/api/auth/register", json=request_data)
+
+    # Assert
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "newuser_no_fio@test.com"
+    assert data["full_name"] is None
 
 
 @pytest.mark.integration

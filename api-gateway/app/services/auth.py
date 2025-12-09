@@ -123,7 +123,9 @@ async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def create_user(db: AsyncSession, email: str, password: str, role: str = "USER") -> User:
+async def create_user(
+    db: AsyncSession, email: str, password: str, role: str = "USER", full_name: str | None = None
+) -> User:
     """
     Create a new user with PENDING status.
 
@@ -132,6 +134,7 @@ async def create_user(db: AsyncSession, email: str, password: str, role: str = "
         email: User email
         password: Plaintext password (will be hashed)
         role: User role (default: USER)
+        full_name: User full name (ФИО) - optional
 
     Returns:
         Created user object
@@ -151,6 +154,7 @@ async def create_user(db: AsyncSession, email: str, password: str, role: str = "
         password_hash=hash_password(password),
         role=role,
         status="PENDING",
+        full_name=full_name,
     )
 
     db.add(user)

@@ -17,6 +17,19 @@
         @validate="onFieldValidate"
       >
         <el-form-item
+          label="ФИО"
+          prop="fullName"
+          :class="getFormItemClass('fullName')"
+        >
+          <el-input
+            v-model="form.fullName"
+            placeholder="Иванов Иван Иванович (необязательно)"
+            size="large"
+            autocomplete="name"
+          />
+        </el-form-item>
+
+        <el-form-item
           label="Email"
           prop="email"
           :class="getFormItemClass('email')"
@@ -125,12 +138,13 @@ const authStore = useAuthStore()
 
 const formRef = ref(null)
 const form = reactive({
+  fullName: '',
   email: '',
   password: '',
   confirmPassword: ''
 })
 
-const authFields = ['email', 'password', 'confirmPassword']
+const authFields = ['fullName', 'email', 'password', 'confirmPassword']
 
 const {
   getFormItemClass,
@@ -196,7 +210,8 @@ const handleRegister = async () => {
     }
 
     try {
-      await authStore.register(form.email, form.password)
+      const fullName = form.fullName.trim() || null
+      await authStore.register(form.email, form.password, fullName)
       ElMessage.success({
         message: 'Регистрация успешна! Ожидайте одобрения администратора.',
         duration: 5000
@@ -215,7 +230,7 @@ const handleRegister = async () => {
 }
 
 watch(
-  () => [form.email, form.password, form.confirmPassword],
+  () => [form.fullName, form.email, form.password, form.confirmPassword],
   () => {
     if (serverErrors.value.length) {
       serverErrors.value = []

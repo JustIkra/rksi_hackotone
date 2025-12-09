@@ -71,22 +71,27 @@ async def test_list_prof_activities_success(
     - List them via API
     - Verify all are returned in correct order
     """
-    # Arrange: Create test activities
+    # Arrange: Create test activities with unique codes
+    unique_suffix = uuid.uuid4().hex[:8]
+    code1 = f"analyst_{unique_suffix}"
+    code2 = f"developer_{unique_suffix}"
+    code3 = f"manager_{unique_suffix}"
+
     activity1 = await create_test_prof_activity(
         db_session,
-        code="analyst",
+        code=code1,
         name="Analyst",
         description="Data analyst",
     )
     activity2 = await create_test_prof_activity(
         db_session,
-        code="developer",
+        code=code2,
         name="Developer",
         description="Software developer",
     )
     activity3 = await create_test_prof_activity(
         db_session,
-        code="manager",
+        code=code3,
         name="Manager",
         description="Project manager",
     )
@@ -103,9 +108,9 @@ async def test_list_prof_activities_success(
 
     # Verify activities are ordered by code
     codes = [a["code"] for a in activities]
-    assert "analyst" in codes
-    assert "developer" in codes
-    assert "manager" in codes
+    assert code1 in codes
+    assert code2 in codes
+    assert code3 in codes
 
     # Verify structure of returned activities
     for activity in activities:
@@ -166,10 +171,11 @@ async def test_list_prof_activities_as_admin(
     - Admin user should have same read access
     - Verify admin can list activities
     """
-    # Arrange: Create test activity
+    # Arrange: Create test activity with unique code
+    unique_code = f"tester_{uuid.uuid4().hex[:8]}"
     await create_test_prof_activity(
         db_session,
-        code="tester",
+        code=unique_code,
         name="Tester",
     )
 
@@ -259,16 +265,17 @@ async def test_create_prof_activity_duplicate_code(
     - Admin tries to create another with same code
     - Should return 400 Bad Request
     """
-    # Arrange: Create existing activity
+    # Arrange: Create existing activity with unique code
+    unique_code = f"duplicate_{uuid.uuid4().hex[:8]}"
     await create_test_prof_activity(
         db_session,
-        code="duplicate",
+        code=unique_code,
         name="Existing Activity",
     )
 
     # Act: Try to create duplicate
     request_data = {
-        "code": "duplicate",
+        "code": unique_code,
         "name": "New Activity with Duplicate Code",
     }
     response = await admin_client.post("/api/prof-activities", json=request_data)
@@ -391,10 +398,11 @@ async def test_update_prof_activity_success(
     - Admin updates name and description
     - Verify changes are applied
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"updatable_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="updatable",
+        code=unique_code,
         name="Original Name",
         description="Original description",
     )
@@ -413,7 +421,7 @@ async def test_update_prof_activity_success(
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == str(activity.id)
-    assert data["code"] == "updatable"  # Code should not change
+    assert data["code"] == unique_code  # Code should not change
     assert data["name"] == "Updated Name"
     assert data["description"] == "Updated description"
 
@@ -430,10 +438,11 @@ async def test_update_prof_activity_name_only(
     - Update only name, leave description unchanged
     - Verify only name is updated
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"partial_update_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="partial_update",
+        code=unique_code,
         name="Original Name",
         description="Original description",
     )
@@ -466,10 +475,11 @@ async def test_update_prof_activity_description_only(
     - Update only description, leave name unchanged
     - Verify only description is updated
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"desc_update_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="desc_update",
+        code=unique_code,
         name="Original Name",
         description="Original description",
     )
@@ -529,10 +539,11 @@ async def test_update_prof_activity_requires_admin(
     - Regular user tries to update activity
     - Should return 403 Forbidden
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"forbidden_update_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="forbidden_update",
+        code=unique_code,
         name="Original Name",
     )
 
@@ -589,10 +600,11 @@ async def test_delete_prof_activity_success(
     - Admin deletes it
     - Verify activity is removed
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"deletable_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="deletable",
+        code=unique_code,
         name="Deletable Activity",
     )
     activity_id = activity.id
@@ -643,10 +655,11 @@ async def test_delete_prof_activity_requires_admin(
     - Regular user tries to delete activity
     - Should return 403 Forbidden
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"forbidden_delete_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="forbidden_delete",
+        code=unique_code,
         name="Forbidden Delete",
     )
 
@@ -694,9 +707,10 @@ async def test_full_lifecycle_prof_activity(
     - Admin deletes it
     - User lists and doesn't see it
     """
-    # Step 1: Create
+    # Step 1: Create with unique code
+    unique_code = f"lifecycle_{uuid.uuid4().hex[:8]}"
     create_data = {
-        "code": "lifecycle_test",
+        "code": unique_code,
         "name": "Lifecycle Test",
         "description": "Testing full lifecycle",
     }
@@ -713,7 +727,7 @@ async def test_full_lifecycle_prof_activity(
     assert list_response.status_code == 200
     activities = list_response.json()["activities"]
     codes = [a["code"] for a in activities]
-    assert "lifecycle_test" in codes
+    assert unique_code in codes
 
     # Step 3: Admin updates
     update_data = {
@@ -732,7 +746,7 @@ async def test_full_lifecycle_prof_activity(
     list_response2 = await user_client.get("/api/prof-activities")
     assert list_response2.status_code == 200
     activities2 = list_response2.json()["activities"]
-    lifecycle_activity = next(a for a in activities2 if a["code"] == "lifecycle_test")
+    lifecycle_activity = next(a for a in activities2 if a["code"] == unique_code)
     assert lifecycle_activity["name"] == "Updated Lifecycle Test"
 
     # Step 5: Admin deletes
@@ -744,7 +758,7 @@ async def test_full_lifecycle_prof_activity(
     assert list_response3.status_code == 200
     activities3 = list_response3.json()["activities"]
     codes3 = [a["code"] for a in activities3]
-    assert "lifecycle_test" not in codes3
+    assert unique_code not in codes3
 
 
 @pytest.mark.integration
@@ -795,10 +809,11 @@ async def test_update_activity_preserves_code(
     - Code field is unique and should not be updatable
     - Update request should only affect name and description
     """
-    # Arrange: Create activity
+    # Arrange: Create activity with unique code
+    unique_code = f"immutable_code_{uuid.uuid4().hex[:8]}"
     activity = await create_test_prof_activity(
         db_session,
-        code="immutable_code",
+        code=unique_code,
         name="Original Name",
     )
 
@@ -815,7 +830,7 @@ async def test_update_activity_preserves_code(
     # Assert: Code unchanged
     assert response.status_code == 200
     data = response.json()
-    assert data["code"] == "immutable_code"
+    assert data["code"] == unique_code
     assert data["name"] == "New Name"
 
 
@@ -827,21 +842,26 @@ async def test_case_sensitive_codes(
     Test that codes are case-sensitive.
 
     Scenario:
-    - Create activity with code 'Developer'
-    - Create another with code 'developer'
+    - Create activity with code 'TestCode'
+    - Create another with code 'testcode'
     - Both should be created successfully (different codes)
     """
+    # Use unique codes to avoid conflicts with seed data
+    unique_suffix = uuid.uuid4().hex[:8]
+    code1 = f"TestCode_{unique_suffix}"
+    code2 = f"testcode_{unique_suffix}"
+
     # Act: Create first activity
     response1 = await admin_client.post(
         "/api/prof-activities",
-        json={"code": "Developer", "name": "Developer (capitalized)"},
+        json={"code": code1, "name": "TestCode (capitalized)"},
     )
     assert response1.status_code == 201
 
     # Act: Create second activity with different case
     response2 = await admin_client.post(
         "/api/prof-activities",
-        json={"code": "developer", "name": "developer (lowercase)"},
+        json={"code": code2, "name": "testcode (lowercase)"},
     )
     assert response2.status_code == 201
 
@@ -849,5 +869,5 @@ async def test_case_sensitive_codes(
     list_response = await admin_client.get("/api/prof-activities")
     activities = list_response.json()["activities"]
     codes = [a["code"] for a in activities]
-    assert "Developer" in codes
-    assert "developer" in codes
+    assert code1 in codes
+    assert code2 in codes
