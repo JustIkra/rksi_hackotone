@@ -301,3 +301,87 @@ async def user_client(client: AsyncClient, db_session: AsyncSession) -> AsyncCli
         active_user.id, active_user.email, active_user.role
     ))
     return client
+
+
+@pytest_asyncio.fixture
+async def admin_only_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """
+    Create an independent test client authenticated as admin.
+
+    Unlike admin_client, this fixture creates its own AsyncClient instance,
+    allowing it to be used alongside user_client in the same test without
+    cookie conflicts.
+    """
+    from main import app
+
+    # Override the get_db dependency to use our test session
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    # Create admin user
+    admin_user = User(
+        id=uuid.uuid4(),
+        email=f"admin_only_{uuid.uuid4().hex[:8]}@test.com",
+        password_hash=hash_password("AdminPass123"),
+        full_name="Test Admin Only",
+        role="ADMIN",
+        status="ACTIVE",
+        created_at=datetime.now(UTC),
+        approved_at=datetime.now(UTC),
+    )
+    db_session.add(admin_user)
+    await db_session.commit()
+    await db_session.refresh(admin_user)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        ac.cookies.set("access_token", create_access_token(
+            admin_user.id, admin_user.email, admin_user.role
+        ))
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def user_only_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """
+    Create an independent test client authenticated as regular user.
+
+    Unlike user_client, this fixture creates its own AsyncClient instance,
+    allowing it to be used alongside admin_client in the same test without
+    cookie conflicts.
+    """
+    from main import app
+
+    # Override the get_db dependency to use our test session
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    # Create user
+    active_user = User(
+        id=uuid.uuid4(),
+        email=f"user_only_{uuid.uuid4().hex[:8]}@test.com",
+        password_hash=hash_password("UserPass123"),
+        full_name="Test User Only",
+        role="USER",
+        status="ACTIVE",
+        created_at=datetime.now(UTC),
+        approved_at=datetime.now(UTC),
+    )
+    db_session.add(active_user)
+    await db_session.commit()
+    await db_session.refresh(active_user)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        ac.cookies.set("access_token", create_access_token(
+            active_user.id, active_user.email, active_user.role
+        ))
+        yield ac

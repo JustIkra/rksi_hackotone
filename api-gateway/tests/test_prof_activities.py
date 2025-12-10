@@ -693,8 +693,8 @@ async def test_delete_prof_activity_invalid_uuid(
 
 @pytest.mark.integration
 async def test_full_lifecycle_prof_activity(
-    admin_client: AsyncClient,
-    user_client: AsyncClient,
+    admin_only_client: AsyncClient,
+    user_only_client: AsyncClient,
 ) -> None:
     """
     Test complete lifecycle of a professional activity.
@@ -714,7 +714,7 @@ async def test_full_lifecycle_prof_activity(
         "name": "Lifecycle Test",
         "description": "Testing full lifecycle",
     }
-    create_response = await admin_client.post(
+    create_response = await admin_only_client.post(
         "/api/prof-activities",
         json=create_data,
     )
@@ -723,7 +723,7 @@ async def test_full_lifecycle_prof_activity(
     activity_id = activity["id"]
 
     # Step 2: User lists and sees it
-    list_response = await user_client.get("/api/prof-activities")
+    list_response = await user_only_client.get("/api/prof-activities")
     assert list_response.status_code == 200
     activities = list_response.json()["activities"]
     codes = [a["code"] for a in activities]
@@ -734,7 +734,7 @@ async def test_full_lifecycle_prof_activity(
         "name": "Updated Lifecycle Test",
         "description": "Updated description",
     }
-    update_response = await admin_client.put(
+    update_response = await admin_only_client.put(
         f"/api/prof-activities/{activity_id}",
         json=update_data,
     )
@@ -743,18 +743,18 @@ async def test_full_lifecycle_prof_activity(
     assert updated["name"] == "Updated Lifecycle Test"
 
     # Step 4: User lists and sees updated version
-    list_response2 = await user_client.get("/api/prof-activities")
+    list_response2 = await user_only_client.get("/api/prof-activities")
     assert list_response2.status_code == 200
     activities2 = list_response2.json()["activities"]
     lifecycle_activity = next(a for a in activities2 if a["code"] == unique_code)
     assert lifecycle_activity["name"] == "Updated Lifecycle Test"
 
     # Step 5: Admin deletes
-    delete_response = await admin_client.delete(f"/api/prof-activities/{activity_id}")
+    delete_response = await admin_only_client.delete(f"/api/prof-activities/{activity_id}")
     assert delete_response.status_code == 204
 
     # Step 6: User lists and doesn't see it
-    list_response3 = await user_client.get("/api/prof-activities")
+    list_response3 = await user_only_client.get("/api/prof-activities")
     assert list_response3.status_code == 200
     activities3 = list_response3.json()["activities"]
     codes3 = [a["code"] for a in activities3]

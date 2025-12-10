@@ -29,11 +29,11 @@
           />
           <el-table-column
             label="Статус"
-            width="120"
+            width="140"
           >
             <template #default="{ row }">
-              <el-tag type="warning">
-                {{ row.status }}
+              <el-tag :type="getStatusTagType(row.status)">
+                {{ getStatusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -48,14 +48,13 @@
           </el-table-column>
           <el-table-column
             label="Действия"
-            width="150"
-            fixed="right"
+            width="160"
+            align="center"
           >
             <template #default="{ row }">
-              <div class="actions-group">
+              <div class="actions-column">
                 <el-button
                   type="success"
-                  size="small"
                   @click="handleApprove(row)"
                 >
                   Одобрить
