@@ -179,3 +179,92 @@ header_map:
   "СТРЕССУСТОЙЧИВОСТЬ": "stress_resistance"
   "КОМУНИКАБЕЛЬНОСТЬ": "communication_skills"
   "КОММУНИКАБЕЛЬНОСТЬ": "communication_skills"
+
+  # ПАРНЫЕ МЕТРИКИ - разные форматы записи через дефис, слэш, пробелы
+  # Блок ЛИЧНОСТЬ (11 пар)
+
+  # ЗАМКНУТОСТЬ–ОБЩИТЕЛЬНОСТЬ
+  "ЗАМКНУТОСТЬ–ОБЩИТЕЛЬНОСТЬ": "introversion_sociability"
+  "ЗАМКНУТОСТЬ - ОБЩИТЕЛЬНОСТЬ": "introversion_sociability"
+  "ЗАМКНУТОСТЬ-ОБЩИТЕЛЬНОСТЬ": "introversion_sociability"
+  "ЗАМКНУТОСТЬ/ОБЩИТЕЛЬНОСТЬ": "introversion_sociability"
+  "ЗАМКНУТОСТЬ / ОБЩИТЕЛЬНОСТЬ": "introversion_sociability"
+
+  # ПАССИВНОСТЬ–АКТИВНОСТЬ
+  "ПАССИВНОСТЬ–АКТИВНОСТЬ": "passivity_activity"
+  "ПАССИВНОСТЬ - АКТИВНОСТЬ": "passivity_activity"
+  "ПАССИВНОСТЬ-АКТИВНОСТЬ": "passivity_activity"
+  "ПАССИВНОСТЬ/АКТИВНОСТЬ": "passivity_activity"
+  "ПАССИВНОСТЬ / АКТИВНОСТЬ": "passivity_activity"
+
+  # НЕДОВЕРЧИВОСТЬ–ДРУЖЕЛЮБИЕ
+  "НЕДОВЕРЧИВОСТЬ–ДРУЖЕЛЮБИЕ": "distrust_friendliness"
+  "НЕДОВЕРЧИВОСТЬ - ДРУЖЕЛЮБИЕ": "distrust_friendliness"
+  "НЕДОВЕРЧИВОСТЬ-ДРУЖЕЛЮБИЕ": "distrust_friendliness"
+  "НЕДОВЕРЧИВОСТЬ/ДРУЖЕЛЮБИЕ": "distrust_friendliness"
+  "НЕДОВЕРЧИВОСТЬ / ДРУЖЕЛЮБИЕ": "distrust_friendliness"
+
+  # НЕЗАВИСИМОСТЬ–КОНФОРМИЗМ
+  "НЕЗАВИСИМОСТЬ–КОНФОРМИЗМ": "independence_conformism"
+  "НЕЗАВИСИМОСТЬ - КОНФОРМИЗМ": "independence_conformism"
+  "НЕЗАВИСИМОСТЬ-КОНФОРМИЗМ": "independence_conformism"
+  "НЕЗАВИСИМОСТЬ/КОНФОРМИЗМ": "independence_conformism"
+  "НЕЗАВИСИМОСТЬ / КОНФОРМИЗМ": "independence_conformism"
+
+  # МОРАЛЬНАЯ ГИБКОСТЬ–МОРАЛЬНОСТЬ
+  "МОРАЛЬНАЯ ГИБКОСТЬ–МОРАЛЬНОСТЬ": "moral_flexibility_morality"
+  "МОРАЛЬНАЯ ГИБКОСТЬ - МОРАЛЬНОСТЬ": "moral_flexibility_morality"
+  "МОРАЛЬНАЯ ГИБКОСТЬ-МОРАЛЬНОСТЬ": "moral_flexibility_morality"
+  "МОРАЛЬНАЯ ГИБКОСТЬ/МОРАЛЬНОСТЬ": "moral_flexibility_morality"
+  "МОРАЛЬНАЯ ГИБКОСТЬ / МОРАЛЬНОСТЬ": "moral_flexibility_morality"
+
+  # ИМПУЛЬСИВНОСТЬ–ОРГАНИЗОВАННОСТЬ
+  "ИМПУЛЬСИВНОСТЬ–ОРГАНИЗОВАННОСТЬ": "impulsiveness_organization"
+  "ИМПУЛЬСИВНОСТЬ - ОРГАНИЗОВАННОСТЬ": "impulsiveness_organization"
+  "ИМПУЛЬСИВНОСТЬ-ОРГАНИЗОВАННОСТЬ": "impulsiveness_organization"
+  "ИМПУЛЬСИВНОСТЬ/ОРГАНИЗОВАННОСТЬ": "impulsiveness_organization"
+  "ИМПУЛЬСИВНОСТЬ / ОРГАНИЗОВАННОСТЬ": "impulsiveness_organization"
+
+  # ТРЕВОЖНОСТЬ–УРАВНОВЕШЕННОСТЬ
+  "ТРЕВОЖНОСТЬ–УРАВНОВЕШЕННОСТЬ": "anxiety_stability"
+  "ТРЕВОЖНОСТЬ - УРАВНОВЕШЕННОСТЬ": "anxiety_stability"
+  "ТРЕВОЖНОСТЬ-УРАВНОВЕШЕННОСТЬ": "anxiety_stability"
+  "ТРЕВОЖНОСТЬ/УРАВНОВЕШЕННОСТЬ": "anxiety_stability"
+  "ТРЕВОЖНОСТЬ / УРАВНОВЕШЕННОСТЬ": "anxiety_stability"
+
+  # СЕНЗИТИВНОСТЬ–НЕЧУВСТВИТЕЛЬНОСТЬ
+  "СЕНЗИТИВНОСТЬ–НЕЧУВСТВИТЕЛЬНОСТЬ": "sensitivity_insensitivity"
+  "СЕНЗИТИВНОСТЬ - НЕЧУВСТВИТЕЛЬНОСТЬ": "sensitivity_insensitivity"
+  "СЕНЗИТИВНОСТЬ-НЕЧУВСТВИТЕЛЬНОСТЬ": "sensitivity_insensitivity"
+  "СЕНЗИТИВНОСТЬ/НЕЧУВСТВИТЕЛЬНОСТЬ": "sensitivity_insensitivity"
+  "СЕНЗИТИВНОСТЬ / НЕЧУВСТВИТЕЛЬНОСТЬ": "sensitivity_insensitivity"
+
+  # ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ–ЛЮБОЗНАТЕЛЬНОСТЬ
+  "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ–ЛЮБОЗНАТЕЛЬНОСТЬ": "intellectual_restraint_curiosity"
+  "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ - ЛЮБОЗНАТЕЛЬНОСТЬ": "intellectual_restraint_curiosity"
+  "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ-ЛЮБОЗНАТЕЛЬНОСТЬ": "intellectual_restraint_curiosity"
+  "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ/ЛЮБОЗНАТЕЛЬНОСТЬ": "intellectual_restraint_curiosity"
+  "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ / ЛЮБОЗНАТЕЛЬНОСТЬ": "intellectual_restraint_curiosity"
+
+  # ТРАДИЦИОННОСТЬ–ОРИГИНАЛЬНОСТЬ
+  "ТРАДИЦИОННОСТЬ–ОРИГИНАЛЬНОСТЬ": "traditionality_originality"
+  "ТРАДИЦИОННОСТЬ - ОРИГИНАЛЬНОСТЬ": "traditionality_originality"
+  "ТРАДИЦИОННОСТЬ-ОРИГИНАЛЬНОСТЬ": "traditionality_originality"
+  "ТРАДИЦИОННОСТЬ/ОРИГИНАЛЬНОСТЬ": "traditionality_originality"
+  "ТРАДИЦИОННОСТЬ / ОРИГИНАЛЬНОСТЬ": "traditionality_originality"
+
+  # КОНКРЕТНОСТЬ–АБСТРАКТНОСТЬ
+  "КОНКРЕТНОСТЬ–АБСТРАКТНОСТЬ": "concreteness_abstractness"
+  "КОНКРЕТНОСТЬ - АБСТРАКТНОСТЬ": "concreteness_abstractness"
+  "КОНКРЕТНОСТЬ-АБСТРАКТНОСТЬ": "concreteness_abstractness"
+  "КОНКРЕТНОСТЬ/АБСТРАКТНОСТЬ": "concreteness_abstractness"
+  "КОНКРЕТНОСТЬ / АБСТРАКТНОСТЬ": "concreteness_abstractness"
+
+  # Блок МОТИВАЦИЯ (1 пара)
+
+  # ВНЕШНЯЯ МОТИВАЦИЯ–ВНУТРЕННЯЯ МОТИВАЦИЯ
+  "ВНЕШНЯЯ МОТИВАЦИЯ–ВНУТРЕННЯЯ МОТИВАЦИЯ": "external_internal_motivation"
+  "ВНЕШНЯЯ МОТИВАЦИЯ - ВНУТРЕННЯЯ МОТИВАЦИЯ": "external_internal_motivation"
+  "ВНЕШНЯЯ МОТИВАЦИЯ-ВНУТРЕННЯЯ МОТИВАЦИЯ": "external_internal_motivation"
+  "ВНЕШНЯЯ МОТИВАЦИЯ/ВНУТРЕННЯЯ МОТИВАЦИЯ": "external_internal_motivation"
+  "ВНЕШНЯЯ МОТИВАЦИЯ / ВНУТРЕННЯЯ МОТИВАЦИЯ": "external_internal_motivation"

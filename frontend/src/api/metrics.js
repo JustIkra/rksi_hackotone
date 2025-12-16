@@ -110,5 +110,26 @@ export const metricsApi = {
   async deleteExtractedMetric(extractedMetricId) {
     const response = await apiClient.delete(`/extracted-metrics/${extractedMetricId}`)
     return response.data
+  },
+
+  /**
+   * Получить шаблон метрик для отчёта (все активные метрики с текущими значениями)
+   * Возвращает полный список метрик, включая пустые (для ручного ввода)
+   * @param {string} reportId - UUID отчёта
+   * @returns {Object} { items: [...], total, filled_count, missing_count }
+   */
+  async getMetricTemplate(reportId) {
+    const response = await apiClient.get(`/reports/${reportId}/metrics/template`)
+    return response.data
+  },
+
+  /**
+   * Удалить/сбросить значение метрики (установить в null)
+   * @param {string} reportId - UUID отчёта
+   * @param {string} metricDefId - UUID определения метрики
+   */
+  async clearExtractedMetric(reportId, metricDefId) {
+    const response = await apiClient.delete(`/reports/${reportId}/metrics/${metricDefId}`)
+    return response.data
   }
 }

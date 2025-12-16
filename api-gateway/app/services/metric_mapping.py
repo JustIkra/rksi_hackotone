@@ -6,6 +6,7 @@ Uses a single header_map for all report types.
 """
 
 import logging
+import re
 from pathlib import Path
 
 import yaml
@@ -84,9 +85,38 @@ class MetricMappingService:
         self._loaded = True
         logger.info(f"Successfully loaded {len(self._mapping)} metric mappings")
 
+    def _normalize_paired_label(self, label: str) -> str:
+        """
+        Normalize a paired metric label for matching.
+
+        Handles:
+        - Multiple consecutive spaces → single space
+        - Whitespace around delimiters (–, -, /) → standardized format
+
+        Args:
+            label: Label to normalize (already uppercased and stripped)
+
+        Returns:
+            Normalized label
+        """
+        # Replace multiple spaces with single space
+        normalized = re.sub(r'\s+', ' ', label)
+
+        # Normalize whitespace around delimiters
+        # "A  –  B" → "A–B", "A - B" → "A - B" (standardized single space)
+        normalized = re.sub(r'\s*([–/])\s*', r'\1', normalized)  # Remove spaces around – and /
+        normalized = re.sub(r'\s+-\s+', ' - ', normalized)  # Standardize hyphen spacing
+
+        return normalized
+
     def get_metric_code(self, label: str) -> str | None:
         """
         Get metric code for a given label.
+
+        Supports paired metrics with intelligent normalization:
+        - Handles various delimiters (–, -, /)
+        - Normalizes whitespace (multiple spaces → single space)
+        - Tries reversed order for paired metrics
 
         Args:
             label: Metric label from document (will be normalized to uppercase)
@@ -97,9 +127,33 @@ class MetricMappingService:
         if not self._loaded:
             self.load()
 
-        # Normalize label
+        # Basic normalization
         normalized_label = label.upper().strip()
-        return self._mapping.get(normalized_label)
+
+        # Try direct lookup first
+        result = self._mapping.get(normalized_label)
+        if result:
+            return result
+
+        # Try with normalized whitespace
+        normalized_whitespace = self._normalize_paired_label(normalized_label)
+        result = self._mapping.get(normalized_whitespace)
+        if result:
+            return result
+
+        # Try reversed order for paired metrics
+        # Detect paired metrics by presence of delimiters
+        for delimiter in ['–', ' - ', '-', '/', ' / ']:
+            if delimiter in normalized_whitespace:
+                parts = normalized_whitespace.split(delimiter, 1)
+                if len(parts) == 2:
+                    # Reverse the order
+                    reversed_label = delimiter.join(reversed(parts))
+                    result = self._mapping.get(reversed_label)
+                    if result:
+                        return result
+
+        return None
 
     def get_mapping(self) -> dict[str, str]:
         """

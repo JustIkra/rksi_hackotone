@@ -492,6 +492,36 @@ async def delete_extracted_metric(
     return MessageResponse(message="Extracted metric deleted successfully")
 
 
+@router.delete("/reports/{report_id}/metrics/{metric_def_id}", response_model=MessageResponse)
+async def delete_extracted_metric_by_report_and_def(
+    report_id: UUID,
+    metric_def_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> MessageResponse:
+    """
+    Delete an extracted metric by report_id and metric_def_id.
+
+    Used when user wants to clear/reset a metric value.
+
+    Requires: ACTIVE user (any role).
+
+    Returns: Success message.
+    """
+    repo = ExtractedMetricRepository(db)
+    extracted_metric = await repo.get_by_report_and_metric(report_id, metric_def_id)
+    if not extracted_metric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Extracted metric not found"
+        )
+    success = await repo.delete(extracted_metric.id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Failed to delete metric"
+        )
+    return MessageResponse(message="Metric value cleared successfully")
+
+
 # Metric Mapping Endpoints
 
 @router.get("/metrics/mapping", response_model=MetricMappingResponse)

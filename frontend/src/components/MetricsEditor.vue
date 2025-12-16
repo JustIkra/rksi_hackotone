@@ -94,9 +94,13 @@
             active-text="Показать все метрики"
             inactive-text="Только заполненные"
           />
-          <span class="metrics-count">
-            Показано: {{ filteredMetrics.length }} из {{ availableMetrics.length }}
-          </span>
+          <div class="metrics-stats">
+            <el-tag type="success" size="small">Заполнено: {{ filledCount }}</el-tag>
+            <el-tag type="info" size="small">Не заполнено: {{ missingCount }}</el-tag>
+            <span class="metrics-count">
+              Показано: {{ filteredMetrics.length }} из {{ availableMetrics.length }}
+            </span>
+          </div>
         </div>
 
         <el-form
@@ -316,6 +320,10 @@ const isEditing = ref(false)
 const error = ref(null)
 const showAllMetrics = ref(false)
 
+// Counters for filled/missing metrics from template
+const filledCount = ref(0)
+const missingCount = ref(0)
+
 const availableMetrics = ref([])
 const metrics = ref([])
 const formData = ref({ metrics: {} })
@@ -377,33 +385,64 @@ const uniqueSources = computed(() => {
 
 const lastUpdated = computed(() => {
   if (!metrics.value || metrics.value.length === 0) return null
-  // Предполагаем, что metrics отсортированы, берём последнюю
-  return new Date() // В реальности нужно брать из данных
+  // Найти самую свежую дату обновления среди всех метрик
+  const dates = metrics.value
+    .map(m => m.updated_at || m.created_at)
+    .filter(Boolean)
+    .map(d => new Date(d))
+  if (dates.length === 0) return null
+  return new Date(Math.max(...dates))
 })
 
 // Methods
-const loadMetricDefs = async () => {
-  try {
-    const response = await metricsApi.listMetricDefs(true)
-    availableMetrics.value = response.items || []
-  } catch (err) {
-    console.error('Failed to load metric definitions:', err)
-    error.value = 'Не удалось загрузить определения метрик'
-  }
-}
-
 const loadMetrics = async () => {
   loading.value = true
   error.value = null
   try {
-    const response = await metricsApi.listExtractedMetrics(props.reportId)
-    metrics.value = response.items || []
+    // Use template endpoint to get ALL metrics including empty ones
+    const response = await metricsApi.getMetricTemplate(props.reportId)
 
-    // Заполняем formData существующими значениями
+    // Store template metadata
+    filledCount.value = response.filled_count || 0
+    missingCount.value = response.missing_count || 0
+
+    // Extract metrics from template items
+    const templateItems = response.items || []
+
+    // Build metrics array from template (for backward compatibility with existing code)
+    metrics.value = templateItems
+      .filter(item => item.value !== null)
+      .map(item => ({
+        metric_def_id: item.metric_def.id,
+        value: item.value,
+        source: item.source,
+        confidence: item.confidence,
+        notes: item.notes,
+        updated_at: item.updated_at
+      }))
+
+    // Build availableMetrics from template
+    availableMetrics.value = templateItems.map(item => ({
+      id: item.metric_def.id,
+      code: item.metric_def.code,
+      name: item.metric_def.name,
+      name_ru: item.metric_def.name_ru,
+      unit: item.metric_def.unit,
+      min_value: item.metric_def.min_value,
+      max_value: item.metric_def.max_value,
+      description: item.metric_def.description
+    }))
+
+    // Populate formData with all values (including null for empty metrics)
     formData.value.metrics = {}
-    metrics.value.forEach(metric => {
-      // Используем parseNumber для корректной обработки запятой
-      formData.value.metrics[metric.metric_def_id] = parseNumber(metric.value)
+    templateItems.forEach(item => {
+      const metricDefId = item.metric_def.id
+      if (item.value !== null) {
+        formData.value.metrics[metricDefId] = parseNumber(item.value)
+      } else {
+        // Initialize empty metrics with null
+        formData.value.metrics[metricDefId] = null
+      }
     })
 
     // Сохраняем оригинальные данные для отмены
@@ -452,10 +491,14 @@ const saveMetrics = async () => {
   error.value = null
 
   try {
-    // Собираем метрики для отправки
+    // Собираем метрики для отправки и для удаления
     const metricsToSave = []
+    const metricsToDelete = []
 
     for (const [metricDefId, value] of Object.entries(formData.value.metrics)) {
+      const originalValue = originalData.value[metricDefId]
+      const hasOriginalValue = originalValue !== null && originalValue !== undefined && originalValue !== ''
+
       if (value !== null && value !== undefined && value !== '') {
         // Используем formatForApi для корректной отправки на сервер
         const apiValue = formatForApi(value)
@@ -467,19 +510,46 @@ const saveMetrics = async () => {
             notes: null
           })
         }
+      } else if (hasOriginalValue) {
+        // Значение было очищено - нужно удалить метрику
+        metricsToDelete.push(metricDefId)
       }
     }
 
-    if (metricsToSave.length === 0) {
-      ElMessage.warning('Не введено ни одного значения метрики')
-      saving.value = false
-      return
+    // Удаляем очищенные метрики
+    let deletedCount = 0
+    for (const metricDefId of metricsToDelete) {
+      try {
+        await metricsApi.clearExtractedMetric(props.reportId, metricDefId)
+        deletedCount++
+      } catch (deleteErr) {
+        // Игнорируем ошибку если метрика уже не существует (404)
+        if (deleteErr.response?.status !== 404) {
+          console.error('Failed to delete metric:', metricDefId, deleteErr)
+        }
+      }
     }
 
-    // Отправляем массовый запрос
-    await metricsApi.bulkCreateExtractedMetrics(props.reportId, metricsToSave)
+    // Сохраняем заполненные метрики
+    if (metricsToSave.length > 0) {
+      await metricsApi.bulkCreateExtractedMetrics(props.reportId, metricsToSave)
+    }
 
-    ElMessage.success(`Успешно сохранено ${metricsToSave.length} метрик`)
+    // Формируем сообщение об успехе
+    const messages = []
+    if (metricsToSave.length > 0) {
+      messages.push(`сохранено: ${metricsToSave.length}`)
+    }
+    if (deletedCount > 0) {
+      messages.push(`сброшено: ${deletedCount}`)
+    }
+
+    if (messages.length === 0) {
+      ElMessage.info('Нет изменений для сохранения')
+    } else {
+      ElMessage.success(`Метрики обновлены (${messages.join(', ')})`)
+    }
+
     isEditing.value = false
 
     // Перезагружаем метрики
@@ -574,8 +644,8 @@ const toggleFullscreen = () => {
 
 // Lifecycle
 onMounted(async () => {
-  await loadMetricDefs()
   // loadMetrics() вызывается через watch на reportStatus
+  // loadMetricDefs больше не нужен - все данные приходят через template endpoint
 })
 
 onUnmounted(() => {
@@ -659,6 +729,12 @@ watch(activeTab, async (newTab) => {
   padding: 12px;
   background: var(--el-fill-color-light);
   border-radius: 4px;
+}
+
+.metrics-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .metrics-count {
