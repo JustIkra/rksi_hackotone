@@ -1,11 +1,22 @@
 """
 Shared AI Vision prompts for metric extraction.
 
-This module contains the vision prompt used by MetricExtractionService.
+This module provides the vision prompt used by MetricExtractionService.
+Prompts are loaded from config/prompts/vision-extraction.json with
+fallback to hardcoded default for backward compatibility.
 """
 
-# Vision prompt - improved with examples and normalization rules
-IMPROVED_VISION_PROMPT = """Ты анализируешь изображение психологического отчёта. Твоя задача - ТОЧНО прочитать числовые значения метрик с диаграмм, графиков и таблиц.
+from __future__ import annotations
+
+import logging
+from functools import lru_cache
+
+from app.core.prompt_loader import get_prompt_loader
+
+logger = logging.getLogger(__name__)
+
+# Fallback prompt (used if config file not found)
+_FALLBACK_VISION_PROMPT = """Ты анализируешь изображение психологического отчёта. Твоя задача - ТОЧНО прочитать числовые значения метрик с диаграмм, графиков и таблиц.
 
 ВАЖНО: Каждая метрика имеет УНИКАЛЬНОЕ значение! Внимательно читай числа на шкалах, столбцах диаграмм и в таблицах. НЕ ВЫДУМЫВАЙ значения - читай их с изображения!
 
@@ -63,3 +74,33 @@ IMPROVED_VISION_PROMPT = """Ты анализируешь изображение
 
 Ответ - ТОЛЬКО JSON:
 """
+
+
+@lru_cache(maxsize=1)
+def get_vision_prompt() -> str:
+    """
+    Get vision extraction prompt from config or fallback.
+
+    Returns:
+        Vision prompt text for AI extraction
+    """
+    loader = get_prompt_loader()
+    return loader.get_prompt_text(
+        "vision-extraction",
+        "vision_prompt",
+        fallback=_FALLBACK_VISION_PROMPT,
+    )
+
+
+# Backward compatibility: keep IMPROVED_VISION_PROMPT as module-level constant
+# This allows existing imports to work unchanged
+def _get_prompt_on_import() -> str:
+    """Load prompt at import time for backward compatibility."""
+    try:
+        return get_vision_prompt()
+    except Exception as e:
+        logger.warning(f"Failed to load vision prompt from config: {e}, using fallback")
+        return _FALLBACK_VISION_PROMPT
+
+
+IMPROVED_VISION_PROMPT = _get_prompt_on_import()

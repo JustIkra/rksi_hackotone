@@ -17,8 +17,6 @@ Markers:
 
 import uuid
 from decimal import Decimal
-from datetime import datetime, UTC
-from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -26,30 +24,19 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    User,
-    Participant,
-    ProfActivity,
-    WeightTable,
     MetricDef,
+    Participant,
     ParticipantMetric,
-    ScoringResult,
+    ProfActivity,
+    User,
+    WeightTable,
 )
-from app.repositories.participant_metric import ParticipantMetricRepository
-from app.repositories.prof_activity import ProfActivityRepository
 from app.repositories.scoring_result import ScoringResultRepository
 from app.services.scoring import ScoringService
 from tests.conftest import get_auth_header
 
-
 # Fixtures
 
-@pytest_asyncio.fixture
-async def mock_gemini_client():
-    """Create a mock Gemini client for testing."""
-    mock_client = MagicMock()
-    # Mock generate_text method for recommendations
-    mock_client.generate_text = AsyncMock(return_value="Mock AI response")
-    return mock_client
 
 
 @pytest_asyncio.fixture
@@ -211,7 +198,6 @@ async def test_calculate_score_success(
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
     participant_metrics: list[ParticipantMetric],
-    mock_gemini_client,
 ):
     """
     Test successful score calculation with correct formula.
@@ -219,14 +205,12 @@ async def test_calculate_score_success(
     Formula: score_pct = Σ(value × weight) × 10
     Expected: (8 * 0.50 + 6 * 0.30 + 4 * 0.20) * 10 = (4 + 1.8 + 0.8) * 10 = 66.00
     """
-    # Disable AI recommendations for this test to avoid Celery/network calls
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     # Verify score calculation
     assert result["score_pct"] == Decimal("66.00")
@@ -275,7 +259,6 @@ async def test_calculate_score_strengths_and_dev_areas(
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
     participant_metrics: list[ParticipantMetric],
-    mock_gemini_client,
 ):
     """
     Test that strengths and development areas are correctly identified.
@@ -285,14 +268,12 @@ async def test_calculate_score_strengths_and_dev_areas(
     - competency_2: 6.00 (middle)
     - competency_3: 4.00 (lowest - should be in dev_areas)
     """
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     # Check strengths (should have highest value first)
     strengths = result["strengths"]
@@ -517,7 +498,6 @@ async def test_calculate_score_edge_case_all_max_values(
     developer_activity: ProfActivity,
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
-    mock_gemini_client,
 ):
     """
     Test score calculation with all maximum values (10.00).
@@ -550,14 +530,12 @@ async def test_calculate_score_edge_case_all_max_values(
         db_session.add(metric)
     await db_session.commit()
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     assert result["score_pct"] == Decimal("100.00")
 
@@ -570,7 +548,6 @@ async def test_calculate_score_edge_case_all_min_values(
     developer_activity: ProfActivity,
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
-    mock_gemini_client,
 ):
     """
     Test score calculation with all minimum values (1.00).
@@ -603,14 +580,12 @@ async def test_calculate_score_edge_case_all_min_values(
         db_session.add(metric)
     await db_session.commit()
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     assert result["score_pct"] == Decimal("10.00")
 
@@ -624,19 +599,16 @@ async def test_calculate_score_persists_to_database(
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
     participant_metrics: list[ParticipantMetric],
-    mock_gemini_client,
 ):
     """
     Test that scoring result is saved to database.
     """
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     # Verify result was saved to database
     scoring_result_id = uuid.UUID(result["scoring_result_id"])
@@ -664,20 +636,17 @@ async def test_api_calculate_score_success(
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
     participant_metrics: list[ParticipantMetric],
-    mock_gemini_client,
 ):
     """
     Test POST /api/scoring/participants/{id}/calculate endpoint success.
     """
     headers = get_auth_header(active_user)
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        response = await client.post(
-            f"/api/scoring/participants/{test_participant.id}/calculate",
-            params={"activity_code": developer_activity.code},
-            headers=headers,
-        )
+    response = await client.post(
+        f"/api/scoring/participants/{test_participant.id}/calculate",
+        params={"activity_code": developer_activity.code},
+        headers=headers,
+    )
 
     assert response.status_code == 200
 
@@ -829,7 +798,6 @@ async def test_api_get_scoring_history_success(
         score_pct=Decimal("75.50"),
         strengths=[{"metric_code": "competency_1", "value": "9.00", "weight": "0.50", "metric_name": "Компетенция 1"}],
         dev_areas=[{"metric_code": "competency_3", "value": "5.00", "weight": "0.20", "metric_name": "Компетенция 3"}],
-        recommendations=[],
     )
 
     result2 = await scoring_repo.create(
@@ -838,7 +806,6 @@ async def test_api_get_scoring_history_success(
         score_pct=Decimal("82.00"),
         strengths=[{"metric_code": "competency_1", "value": "10.00", "weight": "0.50", "metric_name": "Компетенция 1"}],
         dev_areas=[{"metric_code": "competency_2", "value": "6.00", "weight": "0.30", "metric_name": "Компетенция 2"}],
-        recommendations=[],
     )
 
     headers = get_auth_header(active_user)
@@ -897,7 +864,6 @@ async def test_api_get_scoring_history_with_limit(
             score_pct=Decimal(f"{60 + i}.00"),
             strengths=[],
             dev_areas=[],
-            recommendations=[],
         )
 
     headers = get_auth_header(active_user)
@@ -991,7 +957,6 @@ async def test_strengths_and_dev_areas_max_five_items(
     db_session: AsyncSession,
     test_participant: Participant,
     developer_activity: ProfActivity,
-    mock_gemini_client,
 ):
     """
     Test that strengths and dev_areas are limited to 5 items each.
@@ -1036,14 +1001,12 @@ async def test_strengths_and_dev_areas_max_five_items(
 
     await db_session.commit()
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     # Verify max 5 items in each list
     assert len(result["strengths"]) == 5
@@ -1064,7 +1027,6 @@ async def test_score_decimal_precision(
     test_participant: Participant,
     developer_activity: ProfActivity,
     metric_defs: list[MetricDef],
-    mock_gemini_client,
 ):
     """
     Test that score is properly quantized to 0.01 precision.
@@ -1109,14 +1071,12 @@ async def test_score_decimal_precision(
         db_session.add(metric)
     await db_session.commit()
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        service = ScoringService(db_session, gemini_client=None)
+    service = ScoringService(db_session)
 
-        result = await service.calculate_score(
-            participant_id=test_participant.id,
-            prof_activity_code=developer_activity.code,
-        )
+    result = await service.calculate_score(
+        participant_id=test_participant.id,
+        prof_activity_code=developer_activity.code,
+    )
 
     # Verify score has exactly 2 decimal places
     score = result["score_pct"]
@@ -1135,23 +1095,20 @@ async def test_multiple_scoring_calculations_create_history(
     weight_table: WeightTable,
     metric_defs: list[MetricDef],
     participant_metrics: list[ParticipantMetric],
-    mock_gemini_client,
 ):
     """
     Test that multiple score calculations create separate history entries.
     """
     headers = get_auth_header(active_user)
 
-    # Disable AI recommendations for this test
-    with patch("app.core.config.settings.ai_recommendations_enabled", False):
-        # Calculate score multiple times
-        for _ in range(3):
-            response = await client.post(
-                f"/api/scoring/participants/{test_participant.id}/calculate",
-                params={"activity_code": developer_activity.code},
-                headers=headers,
-            )
-            assert response.status_code == 200
+    # Calculate score multiple times
+    for _ in range(3):
+        response = await client.post(
+            f"/api/scoring/participants/{test_participant.id}/calculate",
+            params={"activity_code": developer_activity.code},
+            headers=headers,
+        )
+        assert response.status_code == 200
 
     # Get scoring history
     response = await client.get(

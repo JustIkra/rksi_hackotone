@@ -1,20 +1,12 @@
 """
 External API clients for third-party services.
 
-This package contains clients for external APIs (Gemini, OpenRouter, etc.) with
+This package contains clients for external APIs (OpenRouter) with
 proper error handling, retry logic, and mocking support for tests.
 """
 
 from app.clients.circuit_breaker import CircuitBreaker, CircuitState
 from app.clients.exceptions import (
-    # Gemini Exceptions
-    GeminiAuthError,
-    GeminiClientError,
-    GeminiRateLimitError,
-    GeminiServerError,
-    GeminiServiceError,
-    GeminiTimeoutError,
-    GeminiValidationError,
     # OpenRouter Exceptions
     OpenRouterAuthError,
     OpenRouterClientError,
@@ -24,21 +16,13 @@ from app.clients.exceptions import (
     OpenRouterTimeoutError,
     OpenRouterValidationError,
 )
-from app.clients.gemini import GeminiClient, GeminiTransport
-from app.clients.gemini import HttpxTransport as GeminiHttpxTransport
 from app.clients.key_pool import KeyMetrics, KeyPool, KeyPoolStats, KeySelectionStrategy
-from app.clients.openrouter import OpenRouterClient, OpenRouterTransport
 from app.clients.openrouter import HttpxTransport as OpenRouterHttpxTransport
+from app.clients.openrouter import OpenRouterClient, OpenRouterTransport
 from app.clients.openrouter_pool import OpenRouterPoolClient
-from app.clients.pool_client import GeminiPoolClient
 from app.clients.rate_limiter import RateLimiter, TokenBucket
 
 __all__ = [
-    # Gemini Client
-    "GeminiClient",
-    "GeminiTransport",
-    "GeminiHttpxTransport",
-    "GeminiPoolClient",
     # OpenRouter Client
     "OpenRouterClient",
     "OpenRouterTransport",
@@ -55,14 +39,6 @@ __all__ = [
     # Circuit Breaker
     "CircuitBreaker",
     "CircuitState",
-    # Gemini Exceptions
-    "GeminiClientError",
-    "GeminiRateLimitError",
-    "GeminiServerError",
-    "GeminiServiceError",
-    "GeminiTimeoutError",
-    "GeminiValidationError",
-    "GeminiAuthError",
     # OpenRouter Exceptions
     "OpenRouterClientError",
     "OpenRouterRateLimitError",

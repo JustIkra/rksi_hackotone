@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import User
 from app.services.auth import create_access_token, hash_password
 
-
 # --- Test Fixtures ---
 
 @pytest.fixture
@@ -704,7 +703,7 @@ async def test_full_admin_role_management_workflow(
 
     # Step 2: Revoke admin role (need to use different admin to avoid self-revoke)
     # Create authentication for active_user (now an admin)
-    token = create_access_token(active_user.id, active_user.email, active_user.role)
+    create_access_token(active_user.id, active_user.email, active_user.role)
 
     # Use original admin to revoke
     response = await admin_client.post(f"/api/admin/revoke-admin/{user_id}")

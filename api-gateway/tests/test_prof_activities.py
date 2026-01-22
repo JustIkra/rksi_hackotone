@@ -12,13 +12,12 @@ Tests coverage:
 """
 
 import uuid
-from typing import Any
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ProfActivity, User
+from app.db.models import ProfActivity
 
 pytestmark = pytest.mark.asyncio
 
@@ -77,19 +76,19 @@ async def test_list_prof_activities_success(
     code2 = f"developer_{unique_suffix}"
     code3 = f"manager_{unique_suffix}"
 
-    activity1 = await create_test_prof_activity(
+    await create_test_prof_activity(
         db_session,
         code=code1,
         name="Analyst",
         description="Data analyst",
     )
-    activity2 = await create_test_prof_activity(
+    await create_test_prof_activity(
         db_session,
         code=code2,
         name="Developer",
         description="Software developer",
     )
-    activity3 = await create_test_prof_activity(
+    await create_test_prof_activity(
         db_session,
         code=code3,
         name="Manager",

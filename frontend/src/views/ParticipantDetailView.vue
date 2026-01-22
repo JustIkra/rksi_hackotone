@@ -96,153 +96,10 @@
             :timestamp="formatDate(result.created_at)"
             placement="top"
           >
-            <el-card>
-              <h4>{{ result.prof_activity_name }}</h4>
-              <div class="scoring-result">
-                <div class="score-value">
-                  <span class="score-number">{{ result.score_pct }}%</span>
-                  <el-progress
-                    :percentage="result.score_pct"
-                    :status="getScoreStatus(result.score_pct)"
-                  />
-                </div>
-                <div class="score-details">
-                  <div class="score-section">
-                    <h5>Сильные стороны:</h5>
-                    <ul v-if="result.strengths && result.strengths.length">
-                      <li
-                        v-for="(strength, idx) in result.strengths"
-                        :key="idx"
-                      >
-                        <strong>{{ strength.metric_name }}</strong> — {{ formatFromApi(strength.value) }}
-                        (вес {{ formatFromApi(strength.weight, 2) }})
-                      </li>
-                    </ul>
-                    <el-empty
-                      v-else
-                      description="Нет данных"
-                      :image-size="60"
-                    />
-                  </div>
-                  <div class="score-section">
-                    <h5>Зоны развития:</h5>
-                    <ul v-if="result.dev_areas && result.dev_areas.length">
-                      <li
-                        v-for="(area, idx) in result.dev_areas"
-                        :key="idx"
-                      >
-                        <strong>{{ area.metric_name }}</strong> — {{ formatFromApi(area.value) }}
-                        (вес {{ formatFromApi(area.weight, 2) }})
-                      </li>
-                    </ul>
-                    <el-empty
-                      v-else
-                      description="Нет данных"
-                      :image-size="60"
-                    />
-                  </div>
-                  <!-- Статус генерации рекомендаций (сами рекомендации доступны только в PDF) -->
-                  <div class="score-section recommendations-status-section">
-                    <h5>
-                      Рекомендации:
-                      <el-tag
-                        v-if="result.recommendations_status"
-                        :type="getRecommendationStatusType(result.recommendations_status)"
-                        size="small"
-                        class="recommendation-status-tag"
-                      >
-                        {{ formatRecommendationStatus(result.recommendations_status) }}
-                      </el-tag>
-                    </h5>
-                    <!-- Генерация в процессе -->
-                    <el-alert
-                      v-if="result.recommendations_status === 'pending'"
-                      type="info"
-                      :closable="false"
-                      show-icon
-                    >
-                      <template #title>
-                        <div class="recommendations-pending-alert">
-                          <el-icon class="is-loading">
-                            <Refresh />
-                          </el-icon>
-                          <span>Рекомендации формируются...</span>
-                        </div>
-                      </template>
-                      <template #default>
-                        Кнопка «Скачать PDF» станет доступна после завершения генерации.
-                      </template>
-                    </el-alert>
-                    <!-- Рекомендации готовы -->
-                    <el-alert
-                      v-else-if="result.recommendations_status === 'ready'"
-                      title="Рекомендации готовы"
-                      type="success"
-                      :closable="false"
-                      show-icon
-                    >
-                      <template #default>
-                        Персональные рекомендации доступны в итоговом PDF-отчёте.
-                      </template>
-                    </el-alert>
-                    <!-- Ошибка генерации -->
-                    <el-alert
-                      v-else-if="result.recommendations_status === 'error'"
-                      :title="getRecommendationErrorTitle(result)"
-                      type="error"
-                      :closable="false"
-                      show-icon
-                    >
-                      <template #default>
-                        Не удалось сформировать рекомендации. Попробуйте пересчитать пригодность.
-                      </template>
-                    </el-alert>
-                    <!-- Генерация отключена -->
-                    <el-alert
-                      v-else-if="result.recommendations_status === 'disabled'"
-                      title="Генерация рекомендаций отключена"
-                      type="warning"
-                      :closable="false"
-                      show-icon
-                    >
-                      <template #default>
-                        Генерация рекомендаций отключена для данного окружения.
-                      </template>
-                    </el-alert>
-                    <!-- Нет данных -->
-                    <el-empty
-                      v-else
-                      description="Статус рекомендаций неизвестен"
-                      :image-size="60"
-                    />
-                  </div>
-                </div>
-                <!-- Кнопка скачивания PDF (заблокирована при pending/error) -->
-                <div
-                  v-if="result.prof_activity_code"
-                  class="final-report-actions"
-                >
-                  <el-tooltip
-                    :disabled="canDownloadPdf(result)"
-                    :content="getPdfButtonTooltip(result)"
-                    placement="top"
-                  >
-                    <span>
-                      <el-button
-                        type="primary"
-                        size="small"
-                        :disabled="!canDownloadPdf(result)"
-                        :loading="result.recommendations_status === 'pending'"
-                        @click="downloadFinalReportPdf(result)"
-                      >
-                        <el-icon v-if="result.recommendations_status !== 'pending'"><Download /></el-icon>
-                        {{ result.recommendations_status === 'pending' ? 'Формируется...' : 'Скачать PDF' }}
-                      </el-button>
-                    </span>
-                  </el-tooltip>
-                </div>
-              </div>
-            </el-card>
+            <ScoringResultCard
+              :result="result"
+              @download-pdf="downloadFinalReportPdf"
+            />
           </el-timeline-item>
         </el-timeline>
       </el-card>
@@ -252,6 +109,7 @@
         v-model="showUploadDialog"
         title="Загрузить отчёты"
         :width="isMobile ? '95%' : '600px'"
+        destroy-on-close
         @close="resetBatchUpload"
       >
         <el-upload
@@ -355,6 +213,7 @@
         v-model="showScoringDialog"
         title="Рассчитать профессиональную пригодность"
         :width="isMobile ? '95%' : '500px'"
+        destroy-on-close
       >
         <el-form
           :model="scoringForm"
@@ -419,6 +278,7 @@
         title="Метрики отчёта"
         width="90%"
         top="5vh"
+        destroy-on-close
       >
         <MetricsEditor
           v-if="currentReportId"
@@ -447,7 +307,6 @@ import {
   Download,
   Delete,
   TrendCharts,
-  Refresh,
   DataLine,
   Document,
   Loading,
@@ -458,8 +317,9 @@ import AppLayout from '@/components/AppLayout.vue'
 import MetricsEditor from '@/components/MetricsEditor.vue'
 import ReportList from '@/components/ReportList.vue'
 import ParticipantMetricsDrawer from '@/components/ParticipantMetricsDrawer.vue'
-import { useParticipantsStore } from '@/stores'
-import { reportsApi, profActivitiesApi, scoringApi, participantsApi, metricsApi } from '@/api'
+import ScoringResultCard from '@/components/ScoringResultCard.vue'
+import { useParticipantsStore, useMetricsStore } from '@/stores'
+import { reportsApi, profActivitiesApi, scoringApi, participantsApi } from '@/api'
 import { formatFromApi } from '@/utils/numberFormat'
 import { formatDate } from '@/utils/dateFormat'
 import { useResponsive } from '@/composables/useResponsive'
@@ -467,6 +327,7 @@ import { useResponsive } from '@/composables/useResponsive'
 const router = useRouter()
 const route = useRoute()
 const participantsStore = useParticipantsStore()
+const metricsStore = useMetricsStore()
 
 const loading = ref(false)
 const loadingReports = ref(false)
@@ -481,10 +342,11 @@ const participant = computed(() => participantsStore.currentParticipant)
 const reports = ref([])
 const scoringResults = ref([])
 const profActivities = ref([])
-const metricDefs = ref([])
 const currentReportId = ref(null)
+
+// Use cached metric definitions from store
+const metricDefs = computed(() => metricsStore.metricDefs)
 const refreshInterval = ref(null)
-const recommendationsRefreshInterval = ref(null)
 
 // Check if any report is being processed
 const hasProcessingReports = computed(() => {
@@ -498,11 +360,6 @@ const currentReportStatus = computed(() => {
   return report?.status || null
 })
 
-const hasPendingRecommendations = computed(() => {
-  return scoringResults.value.some(
-    result => result.recommendations_status === 'pending'
-  )
-})
 
 const showUploadDialog = ref(false)
 const showScoringDialog = ref(false)
@@ -520,31 +377,6 @@ const scoringForm = reactive({
   activityCode: ''
 })
 
-const getScoreStatus = (score) => {
-  if (score >= 80) return 'success'
-  if (score >= 60) return ''
-  return 'warning'
-}
-
-const formatRecommendationStatus = (status) => {
-  const statuses = {
-    pending: 'Формируются',
-    ready: 'Готовы',
-    error: 'Ошибка',
-    disabled: 'Отключены'
-  }
-  return statuses[status] || status
-}
-
-const getRecommendationStatusType = (status) => {
-  const types = {
-    pending: 'info',
-    ready: 'success',
-    error: 'danger',
-    disabled: 'warning'
-  }
-  return types[status] || 'info'
-}
 
 const loadParticipant = async () => {
   loading.value = true
@@ -618,11 +450,10 @@ const loadProfActivities = async () => {
   }
 }
 
-// Load metric definitions
+// Load metric definitions (uses cached store)
 const loadMetricDefs = async () => {
   try {
-    const response = await metricsApi.listMetricDefs(true) // activeOnly = true
-    metricDefs.value = response.items || []
+    await metricsStore.fetchMetricDefs({ activeOnly: true })
   } catch (error) {
     console.error('Error loading metric definitions:', error)
   }
@@ -799,24 +630,6 @@ const stopAutoRefresh = () => {
   }
 }
 
-const startRecommendationsRefresh = () => {
-  if (recommendationsRefreshInterval.value) return
-
-  recommendationsRefreshInterval.value = setInterval(async () => {
-    try {
-      await loadScoringResults()
-    } catch (error) {
-      console.error('Recommendations auto-refresh error:', error)
-    }
-  }, 15000)
-}
-
-const stopRecommendationsRefresh = () => {
-  if (recommendationsRefreshInterval.value) {
-    clearInterval(recommendationsRefreshInterval.value)
-    recommendationsRefreshInterval.value = null
-  }
-}
 
 // Watch for processing reports to enable/disable auto-refresh
 watch(hasProcessingReports, (hasProcessing) => {
@@ -827,13 +640,6 @@ watch(hasProcessingReports, (hasProcessing) => {
   }
 })
 
-watch(hasPendingRecommendations, (hasPending) => {
-  if (hasPending) {
-    startRecommendationsRefresh()
-  } else {
-    stopRecommendationsRefresh()
-  }
-})
 
 const viewMetrics = async (reportId) => {
   currentReportId.value = reportId
@@ -924,40 +730,20 @@ const downloadFinalReportPdf = async (result) => {
   }
 }
 
-// Проверка возможности скачивания PDF (только при ready статусе)
-const canDownloadPdf = (result) => {
-  return result?.recommendations_status === 'ready' || result?.recommendations_status === 'disabled'
-}
-
-// Текст подсказки для заблокированной кнопки PDF
-const getPdfButtonTooltip = (result) => {
-  if (result?.recommendations_status === 'pending') {
-    return 'Дождитесь завершения генерации рекомендаций'
-  }
-  if (result?.recommendations_status === 'error') {
-    return 'Ошибка генерации рекомендаций. Попробуйте пересчитать пригодность'
-  }
-  return ''
-}
-
-const getRecommendationErrorTitle = (result) => {
-  if (result?.recommendations_error) {
-    return `Ошибка генерации: ${result.recommendations_error}`
-  }
-  return 'Не удалось получить рекомендации'
-}
 
 onMounted(async () => {
-  await loadParticipant()
-  await loadReports()
-  await loadScoringResults()
-  await loadProfActivities()
-  await loadMetricDefs() // Load metric definitions for names
+  // Parallel loading of independent data sources (eliminates waterfall)
+  await Promise.all([
+    loadParticipant(),
+    loadReports(),
+    loadScoringResults(),
+    loadProfActivities(),
+    loadMetricDefs()
+  ])
 })
 
 onUnmounted(() => {
   stopAutoRefresh()
-  stopRecommendationsRefresh()
 })
 </script>
 
@@ -1030,24 +816,6 @@ onUnmounted(() => {
   font-weight: 600;
   margin: 0 0 12px 0;
   color: var(--color-text-primary);
-}
-
-.recommendation-status-tag {
-  margin-left: 8px;
-}
-
-.recommendations-status-section {
-  min-width: 300px;
-}
-
-.recommendations-pending-alert {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.recommendations-pending-alert .el-icon {
-  font-size: 16px;
 }
 
 .score-section ul {
@@ -1231,10 +999,6 @@ onUnmounted(() => {
 
   .score-section h5 {
     font-size: 14px;
-  }
-
-  .recommendations-status-section {
-    min-width: auto;
   }
 
   .card-header h2 {

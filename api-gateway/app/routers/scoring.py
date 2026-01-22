@@ -4,7 +4,6 @@ Scoring API router.
 Provides endpoints for:
 - Calculating professional fitness scores
 - Generating strengths and development areas
-- Generating AI recommendations
 - Fetching scoring history for participants
 """
 
@@ -13,11 +12,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing_extensions import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.ai_factory import AIClient, get_ai_client
 from app.db.models import User
 from app.db.session import get_db
 from app.repositories.participant import ParticipantRepository
@@ -47,6 +44,17 @@ class MetricItem(BaseModel):
     weight: str  # Decimal as string
 
 
+class TopCompetencyItem(BaseModel):
+    """Top competency item sorted by contribution (value × weight)."""
+
+    metric_code: str
+    metric_name: str
+    metric_name_ru: str
+    value: str  # Decimal as string
+    weight: str  # Decimal as string
+    contribution: str  # Decimal as string
+
+
 class ScoringResponse(BaseModel):
     """Response schema for scoring calculation."""
 
@@ -65,14 +73,8 @@ class ScoringResponse(BaseModel):
     dev_areas: list[MetricItem] = Field(
         default_factory=list, description="Top 5 low-value metrics"
     )
-    recommendations: list[dict] = Field(
-        default_factory=list, description="AI-generated recommendations"
-    )
-    recommendations_status: Literal["pending", "ready", "error", "disabled"] = Field(
-        default="pending", description="Status of AI recommendations generation"
-    )
-    recommendations_error: str | None = Field(
-        default=None, description="Error message if recommendations generation failed"
+    top_competencies: list[TopCompetencyItem] = Field(
+        default_factory=list, description="Top 5 competencies by contribution (value × weight)"
     )
 
 
@@ -86,14 +88,7 @@ class ScoringHistoryItem(BaseModel):
     score_pct: Decimal = Field(..., description="Score as percentage (0-100)")
     strengths: list[dict] = Field(default_factory=list)
     dev_areas: list[dict] = Field(default_factory=list)
-    recommendations: list[dict] = Field(default_factory=list)
     created_at: str  # ISO 8601 datetime string
-    recommendations_status: Literal["pending", "ready", "error", "disabled"] = Field(
-        default="pending", description="Status of AI recommendations generation"
-    )
-    recommendations_error: str | None = Field(
-        default=None, description="Error message if recommendations generation failed"
-    )
 
 
 class ScoringHistoryResponse(BaseModel):
@@ -110,7 +105,6 @@ async def calculate_participant_score(
     activity_code: str = Query(..., description="Professional activity code"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    ai_client: AIClient = Depends(get_ai_client),
 ):
     """
     Calculate professional fitness score for a participant.
@@ -125,13 +119,12 @@ async def calculate_participant_score(
     - Weight table version used
     - Strengths: Top 5 high-value metrics
     - Dev areas: Top 5 low-value metrics
-    - Recommendations: AI-generated recommendations (optional)
 
     Raises:
     - 404: Participant or activity not found
     - 400: Missing metrics or invalid data
     """
-    scoring_service = ScoringService(db, ai_client=ai_client)
+    scoring_service = ScoringService(db)
 
     try:
         result = await scoring_service.calculate_score(
@@ -153,9 +146,7 @@ async def calculate_participant_score(
         missing_metrics=result["missing_metrics"],
         strengths=[MetricItem(**item) for item in result.get("strengths", [])],
         dev_areas=[MetricItem(**item) for item in result.get("dev_areas", [])],
-        recommendations=result.get("recommendations") or [],
-        recommendations_status=result.get("recommendations_status", "pending"),
-        recommendations_error=result.get("recommendations_error"),
+        top_competencies=[TopCompetencyItem(**item) for item in result.get("top_competencies", [])],
     )
 
 
@@ -180,7 +171,6 @@ async def get_participant_scoring_history(
         - score_pct: Score as percentage (0-100)
         - strengths: JSONB array of strengths
         - dev_areas: JSONB array of development areas
-        - recommendations: JSONB array of recommendations
         - created_at: Timestamp when score was computed
 
     Raises:
@@ -206,10 +196,7 @@ async def get_participant_scoring_history(
                 score_pct=result.score_pct,
                 strengths=result.strengths or [],
                 dev_areas=result.dev_areas or [],
-                recommendations=result.recommendations or [],
                 created_at=result.computed_at.isoformat(),
-                recommendations_status=result.recommendations_status,
-                recommendations_error=result.recommendations_error,
             )
         )
 

@@ -12,7 +12,7 @@ celery_app = Celery(
     "workers_prof",
     broker=settings.rabbitmq_url,
     backend=settings.redis_url,
-    include=["app.tasks.extraction", "app.tasks.recommendations"],
+    include=["app.tasks.extraction"],
 )
 
 # Configure Celery
@@ -30,7 +30,6 @@ celery_app.conf.update(
     # Task routing
     task_routes={
         "app.tasks.extraction.*": {"queue": "extraction"},
-        "app.tasks.recommendations.*": {"queue": "recommendations"},
     },
     # For testing
     task_always_eager=settings.celery_task_always_eager,

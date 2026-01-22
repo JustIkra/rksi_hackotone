@@ -1,120 +1,53 @@
-# syntax=docker/dockerfile:1.6
-
-#
-# Stage 1: Build Frontend (Vue SPA)
-#
+# Stage 1: Build frontend
 FROM node:20-alpine AS frontend-builder
-
-WORKDIR /frontend
-
-# Copy package files and install dependencies
+WORKDIR /build
 COPY frontend/package*.json ./
-RUN npm ci --prefer-offline --no-audit
-
-# Copy frontend source and build
+RUN npm ci
 COPY frontend/ ./
-# Override outDir for Docker build to output to ./dist instead of ../api-gateway/static
-RUN npm run build -- --outDir ./dist
+# Override outDir to build in current directory
+RUN npm run build -- --outDir=dist
 
-#
-# Stage 2: Build Backend with Frontend Assets
-#
-FROM python:3.12-slim AS backend
+# Stage 2: Python runtime
+FROM python:3.11-slim AS runtime
 
-# Build arguments for metadata
-ARG BUILD_DATE
-ARG GIT_SHA
-
-# Labels
-LABEL org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.revision="${GIT_SHA}" \
-      org.opencontainers.image.title="Workers Prof API Gateway" \
-      org.opencontainers.image.description="Professional competency assessment system"
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    APP_HOME=/app
-
-WORKDIR ${APP_HOME}
-
-# System dependencies (curl for healthcheck, VPN support, WeasyPrint for PDF generation)
-# Note: resolvconf may fail to configure /etc/resolv.conf in Docker, but it's not critical
-# WireGuard tools are required for both WireGuard and AWG (AWG falls back to wg-quick if amneziawg is not available)
-# For full AWG obfuscation support, install amneziawg client separately (not included in standard repos)
-# OpenVPN client is required for OpenVPN support
-# Hysteria2 is the recommended VPN proxy client
-# WeasyPrint dependencies: libglib, libgobject, libpango, libpangocairo, libgdk-pixbuf, libharfbuzz, fontconfig
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        wget \
-        iproute2 \
-        iptables \
-        wireguard-tools \
-        openvpn \
-        procps \
-        libglib2.0-0 \
-        libgobject-2.0-0 \
-        libpango-1.0-0 \
-        libpangocairo-1.0-0 \
-        libharfbuzz0b \
-        libgdk-pixbuf-2.0-0 \
-        libffi-dev \
-        shared-mime-info \
-        fontconfig \
-        fonts-dejavu-core \
-    && (DEBIAN_FRONTEND=noninteractive apt-get install -y resolvconf || true) \
+# Install system dependencies for WeasyPrint, OpenCV, and DOCX conversion
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    libcairo2 \
+    libgirepository1.0-dev \
+    gir1.2-pango-1.0 \
+    libgl1 \
+    libglib2.0-0 \
+    # For DOCX to PDF conversion
+    pandoc \
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    texlive-latex-extra \
+    lmodern \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Hysteria2 client (recommended VPN proxy)
-# Determine architecture and download appropriate binary
-RUN ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then \
-        HYSTERIA_ARCH="amd64"; \
-    elif [ "$ARCH" = "arm64" ]; then \
-        HYSTERIA_ARCH="arm64"; \
-    else \
-        echo "Unsupported architecture: $ARCH"; exit 1; \
-    fi && \
-    wget -q -O /usr/local/bin/hysteria \
-        "https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-${HYSTERIA_ARCH}" && \
-    chmod +x /usr/local/bin/hysteria && \
-    hysteria version || echo "Hysteria2 installed (version check may fail without config)"
+WORKDIR /app
 
-# Install Python dependencies first (better layer caching)
-COPY api-gateway/requirements.txt ./
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt
-
-# Copy backend application code
+# Copy application code and install dependencies from pyproject.toml
 COPY api-gateway/ ./
+RUN pip install --no-cache-dir .[dev]
 
-# Copy config directory (metric-mapping.yaml and other configs)
-COPY config/ ./config/
+# Copy built frontend to static directory
+COPY --from=frontend-builder /build/dist ./static/
 
-# Copy built frontend from frontend-builder stage
-COPY --from=frontend-builder /frontend/dist/ ./static/
+# Copy config files
+COPY config/ /app/config/
 
-# Create storage directory for file uploads
-# Create VPN config directory
-RUN mkdir -p /app/storage /app/wireguard
+# Create storage directory
+RUN mkdir -p /app/storage && chmod 755 /app/storage
 
 # Make entrypoint scripts executable
-RUN chmod +x /app/docker-entrypoint.sh /app/docker-entrypoint-worker.sh /app/docker-entrypoint-worker-recommendations.sh || true
+RUN chmod +x docker-entrypoint.sh docker-entrypoint-worker.sh
 
-# Expose internal app port
 EXPOSE 9187
 
-# Default environment variables
-ENV ENV=prod \
-    APP_PORT=9187 \
-    FILE_STORAGE_BASE=/app/storage
-
-# Healthcheck
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
-    CMD curl -fsS http://127.0.0.1:${APP_PORT}/api/healthz || exit 1
-
-# Default command
-CMD ["python", "main.py"]
+CMD ["./docker-entrypoint.sh"]

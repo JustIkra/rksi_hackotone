@@ -105,7 +105,8 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { participantsApi, metricsApi } from '@/api'
+import { participantsApi } from '@/api'
+import { useMetricsStore } from '@/stores'
 import { formatFromApi } from '@/utils/numberFormat'
 import { getMetricDisplayName } from '@/utils/metricNames'
 import { formatDate } from '@/utils/dateFormat'
@@ -127,10 +128,15 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+// Store
+const metricsStore = useMetricsStore()
+
 // State
 const loading = ref(false)
 const metrics = ref([])
-const metricDefs = ref([])
+
+// Cached metric definitions from store
+const metricDefs = computed(() => metricsStore.metricDefs)
 
 // Computed
 const emptyText = computed(() => {
@@ -142,10 +148,10 @@ const handleClose = (value) => {
   emit('update:modelValue', value)
 }
 
+// Load metric definitions (uses cached store)
 const loadMetricDefs = async () => {
   try {
-    const response = await metricsApi.listMetricDefs(true) // activeOnly = true
-    metricDefs.value = response.items || []
+    await metricsStore.fetchMetricDefs({ activeOnly: true })
   } catch (error) {
     console.error('Error loading metric definitions:', error)
   }
@@ -166,7 +172,7 @@ const loadMetrics = async () => {
 
 const getMetricName = (metricCode) => {
   if (!metricCode) return '—'
-  const metricDef = metricDefs.value.find(m => m.code === metricCode)
+  const metricDef = metricDefs.value?.find(m => m.code === metricCode)
 
   // Suppress warnings in this component
   const logger = { warn: () => {} }

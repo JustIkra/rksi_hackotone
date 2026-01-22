@@ -12,25 +12,15 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
-# Load test environment variables from .env.test if it exists
-# This provides sensible defaults for running tests locally
-_env_test_path = Path(__file__).parent.parent / ".env.test"
-if _env_test_path.exists():
-    from dotenv import load_dotenv
-    load_dotenv(_env_test_path, override=False)  # Don't override existing env vars
-
 from app.core.config import settings
-from app.db.base import Base
 from app.db.models import User
 from app.db.session import get_db
 from app.services.auth import create_access_token, hash_password

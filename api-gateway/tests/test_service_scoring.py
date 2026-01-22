@@ -12,8 +12,7 @@ Markers:
 """
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -455,7 +454,7 @@ class TestScoringFormula:
         values = [Decimal("10.0")] * 3
         weights = [Decimal("0.333334"), Decimal("0.333333"), Decimal("0.333333")]
 
-        score_sum = sum(v * w for v, w in zip(values, weights))
+        score_sum = sum(v * w for v, w in zip(values, weights, strict=False))
         score_pct = score_sum * Decimal("10")
 
         # Should be very close to 100.0
@@ -469,7 +468,7 @@ class TestScoringFormula:
         values = [Decimal("1.0")] * 3
         weights = [Decimal("0.333334"), Decimal("0.333333"), Decimal("0.333333")]
 
-        score_sum = sum(v * w for v, w in zip(values, weights))
+        score_sum = sum(v * w for v, w in zip(values, weights, strict=False))
         score_pct = score_sum * Decimal("10")
 
         # Should be very close to 10.0

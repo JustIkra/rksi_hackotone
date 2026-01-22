@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import FileRef, MetricDef, Participant, Report, User
 from tests.conftest import get_auth_header
 
-
 # Fixtures for test data
 
 @pytest.fixture
@@ -122,9 +121,9 @@ async def inactive_metric_def(db_session: AsyncSession) -> MetricDef:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_create_metric_def_success(client: AsyncClient, active_user: User):
-    """Test creating a metric definition with valid data."""
-    headers = get_auth_header(active_user)
+async def test_create_metric_def_success(client: AsyncClient, admin_user: User):
+    """Test creating a metric definition with valid data. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     payload = {
         "code": "new_metric",
         "name": "New Metric",
@@ -154,11 +153,11 @@ async def test_create_metric_def_success(client: AsyncClient, active_user: User)
 @pytest.mark.asyncio
 async def test_create_metric_def_duplicate_code(
     client: AsyncClient,
-    active_user: User,
+    admin_user: User,
     sample_metric_def: MetricDef,
 ):
-    """Test creating a metric definition with duplicate code fails."""
-    headers = get_auth_header(active_user)
+    """Test creating a metric definition with duplicate code fails. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     payload = {
         "code": sample_metric_def.code,  # Duplicate
         "name": "Duplicate Metric",
@@ -173,9 +172,9 @@ async def test_create_metric_def_duplicate_code(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_create_metric_def_invalid_range(client: AsyncClient, active_user: User):
-    """Test creating a metric definition with min > max fails."""
-    headers = get_auth_header(active_user)
+async def test_create_metric_def_invalid_range(client: AsyncClient, admin_user: User):
+    """Test creating a metric definition with min > max fails. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     payload = {
         "code": "invalid_range",
         "name": "Invalid Range",
@@ -293,11 +292,11 @@ async def test_get_metric_def_not_found(client: AsyncClient, active_user: User):
 @pytest.mark.asyncio
 async def test_update_metric_def(
     client: AsyncClient,
-    active_user: User,
+    admin_user: User,
     sample_metric_def: MetricDef,
 ):
-    """Test updating a metric definition."""
-    headers = get_auth_header(active_user)
+    """Test updating a metric definition. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     payload = {
         "name": "Updated Metric Name",
         "description": "Updated description",
@@ -320,9 +319,9 @@ async def test_update_metric_def(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_update_metric_def_not_found(client: AsyncClient, active_user: User):
-    """Test updating a non-existent metric definition returns 404."""
-    headers = get_auth_header(active_user)
+async def test_update_metric_def_not_found(client: AsyncClient, admin_user: User):
+    """Test updating a non-existent metric definition returns 404. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     fake_id = uuid.uuid4()
     payload = {"name": "Updated Name"}
 
@@ -339,10 +338,10 @@ async def test_update_metric_def_not_found(client: AsyncClient, active_user: Use
 @pytest.mark.asyncio
 async def test_delete_metric_def(
     client: AsyncClient,
-    active_user: User,
+    admin_user: User,
     db_session: AsyncSession,
 ):
-    """Test deleting a metric definition."""
+    """Test deleting a metric definition. Requires ADMIN."""
     # Create a metric def to delete
     metric_def = MetricDef(
         id=uuid.uuid4(),
@@ -354,7 +353,7 @@ async def test_delete_metric_def(
     await db_session.commit()
     await db_session.refresh(metric_def)
 
-    headers = get_auth_header(active_user)
+    headers = get_auth_header(admin_user)
 
     response = await client.delete(
         f"/api/metric-defs/{metric_def.id}",
@@ -371,9 +370,9 @@ async def test_delete_metric_def(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_delete_metric_def_not_found(client: AsyncClient, active_user: User):
-    """Test deleting a non-existent metric definition returns 404."""
-    headers = get_auth_header(active_user)
+async def test_delete_metric_def_not_found(client: AsyncClient, admin_user: User):
+    """Test deleting a non-existent metric definition returns 404. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
     fake_id = uuid.uuid4()
 
     response = await client.delete(f"/api/metric-defs/{fake_id}", headers=headers)
@@ -1037,12 +1036,12 @@ async def test_pending_user_cannot_access_metrics(
 @pytest.mark.asyncio
 async def test_full_metric_workflow(
     client: AsyncClient,
-    active_user: User,
+    admin_user: User,
     sample_report: Report,
     db_session: AsyncSession,
 ):
-    """Test complete workflow: create metric defs, extract metrics, update, delete."""
-    headers = get_auth_header(active_user)
+    """Test complete workflow: create metric defs, extract metrics, update, delete. Requires ADMIN."""
+    headers = get_auth_header(admin_user)
 
     # Step 1: Create metric definitions
     metric1_payload = {

@@ -220,8 +220,9 @@ async def get_final_report(
 
     if format == "pdf":
         import logging
-        from app.services.report_template import render_final_report_html
+
         from app.services.pdf_generator import render_html_to_pdf
+        from app.services.report_template import render_final_report_html
 
         logger = logging.getLogger(__name__)
 
@@ -304,15 +305,6 @@ async def get_participant_scoring_history(
         if result.dev_areas:
             dev_areas = [MetricItem(**item) for item in result.dev_areas]
 
-        # Handle format migration for recommendations
-        recommendations = None
-        if result.recommendations:
-            if isinstance(result.recommendations, list):
-                if result.recommendations and isinstance(result.recommendations[0], dict):
-                    recommendations = result.recommendations
-                else:
-                    recommendations = [{"title": rec, "link_url": None, "priority": 3} for rec in result.recommendations]
-
         history_items.append(
             ScoringHistoryItem(
                 id=result.id,
@@ -321,10 +313,7 @@ async def get_participant_scoring_history(
                 score_pct=float(result.score_pct),
                 strengths=strengths,
                 dev_areas=dev_areas,
-                recommendations=recommendations,
                 created_at=result.computed_at,
-                recommendations_status=result.recommendations_status,
-                recommendations_error=result.recommendations_error,
             )
         )
 
@@ -350,8 +339,9 @@ async def get_participant_metrics(
     Returns: List of participant metrics with values, confidence, and update timestamps.
     """
     from datetime import datetime
-    from app.repositories.participant_metric import ParticipantMetricRepository
+
     from app.repositories.metric import MetricDefRepository
+    from app.repositories.participant_metric import ParticipantMetricRepository
 
     service = ParticipantService(db)
     participant = await service.get_participant(participant_id)

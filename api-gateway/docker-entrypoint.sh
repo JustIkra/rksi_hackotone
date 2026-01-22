@@ -3,16 +3,6 @@ set -eu
 
 echo "=== Bootstrapping API service ==="
 
-vpn_flag="$(printf '%s' "${VPN_ENABLED:-0}" | tr '[:upper:]' '[:lower:]')"
-if [ "$vpn_flag" = "1" ] || [ "$vpn_flag" = "true" ] || [ "$vpn_flag" = "yes" ] || [ "$vpn_flag" = "on" ]; then
-    echo "Ensuring WireGuard/AWG interface before starting the app..."
-    if ! python -m app.core.vpn_bootstrap; then
-        echo "ERROR: VPN bootstrap failed! Application will not start without VPN." >&2
-        exit 1
-    fi
-    echo "VPN interface is up and running."
-fi
-
 echo "Checking database state..."
 # Detect broken state: alembic_version exists but core tables don't
 # This can happen if migrations were interrupted or volume was corrupted
@@ -75,9 +65,38 @@ fi
 echo "Database migrations applied successfully."
 
 echo "Creating default admin user..."
-if ! python create_admin.py admin@test.com admin123; then
-    echo "WARNING: Failed to create default admin user (may already exist)" >&2
-fi
+python -c "
+import asyncio
+import uuid
+from datetime import UTC, datetime
+from app.db.models import User
+from app.db.session import AsyncSessionLocal
+from app.services.auth import get_user_by_email, hash_password
+
+async def create_admin():
+    email = 'admin@test.com'
+    password = 'admin123'
+
+    async with AsyncSessionLocal() as session:
+        existing = await get_user_by_email(session, email)
+        if existing:
+            print(f'Admin user {email} already exists')
+            return
+
+        user = User(
+            id=uuid.uuid4(),
+            email=email,
+            password_hash=hash_password(password),
+            role='ADMIN',
+            status='ACTIVE',
+            approved_at=datetime.now(UTC),
+        )
+        session.add(user)
+        await session.commit()
+        print(f'Created admin user: {email}')
+
+asyncio.run(create_admin())
+" || echo "WARNING: Failed to create default admin user (may already exist)" >&2
 
 echo "Starting application..."
 exec python main.py

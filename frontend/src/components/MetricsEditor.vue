@@ -527,19 +527,16 @@ const saveMetrics = async () => {
       }
     }
 
-    // Удаляем очищенные метрики
-    let deletedCount = 0
-    for (const metricDefId of metricsToDelete) {
-      try {
-        await metricsApi.clearExtractedMetric(props.reportId, metricDefId)
-        deletedCount++
-      } catch (deleteErr) {
-        // Игнорируем ошибку если метрика уже не существует (404)
-        if (deleteErr.response?.status !== 404) {
-          console.error('Failed to delete metric:', metricDefId, deleteErr)
-        }
-      }
-    }
+    // Удаляем очищенные метрики параллельно (eliminates sequential requests)
+    const deleteResults = await Promise.allSettled(
+      metricsToDelete.map(metricDefId =>
+        metricsApi.clearExtractedMetric(props.reportId, metricDefId)
+      )
+    )
+    const deletedCount = deleteResults.filter(r =>
+      r.status === 'fulfilled' ||
+      (r.status === 'rejected' && r.reason?.response?.status === 404)
+    ).length
 
     // Сохраняем заполненные метрики
     if (metricsToSave.length > 0) {

@@ -15,7 +15,7 @@ Markers:
 import io
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -23,8 +23,8 @@ from PIL import Image
 from app.services.docx_extraction import (
     DocxImageExtractor,
     ExtractedImage,
-    InvalidDocxError,
     ImageExtractionError,
+    InvalidDocxError,
 )
 
 

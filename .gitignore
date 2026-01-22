@@ -7,6 +7,10 @@ CLAUDE.md
 .mcp.json
 .claude
 open_vpn.ovpn
+wireguard_awg.conf
 seed.spec.ts
 __pycache__
 .show_case
+.pytest_cache
+.ruff_cache
+docs

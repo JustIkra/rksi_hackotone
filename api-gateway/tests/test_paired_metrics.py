@@ -357,43 +357,48 @@ class TestPairedMetricsDisplayNames:
 
 
 @pytest.mark.unit
-class TestIndividualPoleMappings:
-    """Test that individual poles can still be extracted separately."""
+class TestIndividualPolesRemoved:
+    """
+    Test that individual poles are NO LONGER supported (removed in migration e1f2g3h4i5j6).
 
-    INDIVIDUAL_POLES = [
-        ("ЗАМКНУТОСТЬ", "introversion"),
-        ("ОБЩИТЕЛЬНОСТЬ", "sociability"),
-        ("ПАССИВНОСТЬ", "passivity"),
-        ("АКТИВНОСТЬ", "activity"),
-        ("НЕДОВЕРЧИВОСТЬ", "distrust"),
-        ("ДРУЖЕЛЮБИЕ", "friendliness"),
-        ("НЕЗАВИСИМОСТЬ", "independence"),
-        ("КОНФОРМИЗМ", "conformism"),
-        ("МОРАЛЬНАЯ ГИБКОСТЬ", "moral_flexibility"),
-        ("МОРАЛЬНОСТЬ", "morality"),
-        ("ИМПУЛЬСИВНОСТЬ", "impulsiveness"),
-        ("ОРГАНИЗОВАННОСТЬ", "organization"),
-        ("ТРЕВОЖНОСТЬ", "anxiety"),
-        ("УРАВНОВЕШЕННОСТЬ", "emotional_stability"),
-        ("СЕНЗИТИВНОСТЬ", "sensitivity"),
-        ("НЕЧУВСТВИТЕЛЬНОСТЬ", "insensitivity"),
-        ("ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ", "intellectual_restraint"),
-        ("ЛЮБОЗНАТЕЛЬНОСТЬ", "curiosity"),
-        ("ТРАДИЦИОННОСТЬ", "traditionality"),
-        ("ОРИГИНАЛЬНОСТЬ", "originality"),
-        ("КОНКРЕТНОСТЬ", "concreteness"),
-        ("АБСТРАКТНОСТЬ", "abstractness"),
-        ("ВНЕШНЯЯ МОТИВАЦИЯ", "external_motivation"),
-        ("ВНУТРЕННЯЯ МОТИВАЦИЯ", "internal_motivation"),
+    Single-pole personality metrics like 'introversion', 'sociability', etc. have been
+    completely removed from the system. Only paired metrics are now supported.
+    """
+
+    REMOVED_INDIVIDUAL_POLES = [
+        "ЗАМКНУТОСТЬ",
+        "ОБЩИТЕЛЬНОСТЬ",
+        "ПАССИВНОСТЬ",
+        "АКТИВНОСТЬ",
+        "НЕДОВЕРЧИВОСТЬ",
+        "ДРУЖЕЛЮБИЕ",
+        "НЕЗАВИСИМОСТЬ",
+        "КОНФОРМИЗМ",
+        "МОРАЛЬНАЯ ГИБКОСТЬ",
+        "МОРАЛЬНОСТЬ",
+        "ИМПУЛЬСИВНОСТЬ",
+        "ОРГАНИЗОВАННОСТЬ",
+        "ТРЕВОЖНОСТЬ",
+        "УРАВНОВЕШЕННОСТЬ",
+        "СЕНЗИТИВНОСТЬ",
+        "НЕЧУВСТВИТЕЛЬНОСТЬ",
+        "ИНТЕЛЛЕКТУАЛЬНАЯ СДЕРЖАННОСТЬ",
+        "ЛЮБОЗНАТЕЛЬНОСТЬ",
+        "ТРАДИЦИОННОСТЬ",
+        "ОРИГИНАЛЬНОСТЬ",
+        "КОНКРЕТНОСТЬ",
+        "АБСТРАКТНОСТЬ",
+        "ВНЕШНЯЯ МОТИВАЦИЯ",
+        "ВНУТРЕННЯЯ МОТИВАЦИЯ",
     ]
 
-    @pytest.mark.parametrize("label,expected_code", INDIVIDUAL_POLES)
-    def test_individual_pole_mapping(self, label, expected_code):
+    @pytest.mark.parametrize("label", REMOVED_INDIVIDUAL_POLES)
+    def test_individual_pole_not_mapped(self, label):
         """
-        Test that individual poles can be extracted separately.
+        Test that individual poles return None (no longer supported).
 
-        This is important because some reports may have separate values
-        for each pole rather than a single paired value.
+        These single-pole metrics have been removed in favor of paired metrics.
+        Example: "ЗАМКНУТОСТЬ" alone should return None; use "ЗАМКНУТОСТЬ–ОБЩИТЕЛЬНОСТЬ" instead.
         """
         from app.services.metric_mapping import get_metric_mapping_service
 
@@ -401,9 +406,9 @@ class TestIndividualPoleMappings:
 
         result = service.get_metric_code(label)
 
-        assert result == expected_code, (
-            f"Expected individual pole '{label}' to map to '{expected_code}', "
-            f"but got '{result}'"
+        assert result is None, (
+            f"Individual pole '{label}' should NOT be mapped anymore. "
+            f"Got '{result}' but expected None. Use paired metrics instead."
         )
 
 

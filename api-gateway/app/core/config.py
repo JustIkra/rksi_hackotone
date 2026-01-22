@@ -89,76 +89,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Log level")
     log_mask_secrets: bool = Field(default=True, description="Mask secrets in logs")
 
-    # VPN (WireGuard / AWG / OpenVPN / Hysteria2)
-    vpn_enabled: bool = Field(default=False, description="Enable VPN")
-    vpn_type: Literal["wireguard", "awg", "openvpn", "hysteria2"] = Field(
-        default="hysteria2", description="VPN type"
-    )
-    wg_config_path: str | None = Field(
-        default=None, description="WireGuard/AWG config path"
-    )
-    wg_interface: str = Field(default="wg0", description="WireGuard/AWG interface name")
-    openvpn_config_path: str | None = Field(
-        default=None, description="OpenVPN config path (.ovpn file)"
-    )
-    openvpn_interface: str = Field(
-        default="tun0", description="OpenVPN interface name (usually tun0)"
-    )
-    # Hysteria2 settings
-    hysteria2_uri: str | None = Field(
-        default=None, description="Hysteria2 connection URI (hysteria2://password@server:port/?sni=hostname)"
-    )
-    hysteria2_socks5_port: int = Field(
-        default=1080, description="Hysteria2 local SOCKS5 proxy port"
-    )
-    hysteria2_http_port: int = Field(
-        default=8080, description="Hysteria2 local HTTP proxy port"
-    )
-    hysteria2_config_path: str = Field(
-        default="/tmp/hysteria2.yaml", description="Hysteria2 generated config path"
-    )
-    vpn_route_mode: Literal["all", "domains", "cidr"] = Field(
-        default="domains", description="Routing mode: all traffic, specific domains, or CIDRs"
-    )
-    vpn_route_domains: str = Field(
-        default="generativelanguage.googleapis.com",
-        description="Comma-separated domains to route via VPN (when VPN_ROUTE_MODE=domains)",
-    )
-    vpn_route_cidrs: str = Field(
-        default="",
-        description="Comma-separated CIDRs to route via VPN (when VPN_ROUTE_MODE=cidr)",
-    )
-    vpn_bypass_cidrs: str = Field(
-        default="172.16.0.0/12,10.0.0.0/8,192.168.0.0/16",
-        description="Comma-separated CIDRs to bypass VPN",
-    )
-
-    # Gemini / AI
-    gemini_api_keys: str = Field(default="", description="Comma-separated Gemini API keys")
-    gemini_model_text: str = Field(
-        default="gemini-2.5-flash", description="Gemini model for text generation"
-    )
-    gemini_model_vision: str = Field(
-        default="gemini-2.5-flash", description="Gemini model for vision tasks"
-    )
-    gemini_qps_per_key: float = Field(
-        default=0.15, description="QPS limit per API key (conservative: ~10 req/min)"
-    )
-    gemini_burst_multiplier: float = Field(
-        default=8.1, description="Burst size multiplier (burst_size = qps * multiplier). Use 1.0 to disable burst."
-    )
-    gemini_timeout_s: int = Field(default=30, description="Gemini API timeout in seconds")
-    gemini_strategy: Literal["ROUND_ROBIN", "LEAST_BUSY"] = Field(
-        default="ROUND_ROBIN", description="Key rotation strategy"
-    )
-    ai_recommendations_enabled: bool = Field(
-        default=True, description="Enable AI-generated recommendations"
-    )
-    ai_vision_fallback_enabled: bool = Field(
-        default=True, description="Enable Gemini Vision processing pipeline"
-    )
-
-    # OpenRouter Configuration
+    # OpenRouter Configuration (AI Provider)
     openrouter_api_keys: str = Field(
         default="", description="Comma-separated OpenRouter API keys for rotation"
     )
@@ -190,9 +121,40 @@ class Settings(BaseSettings):
         default="ROUND_ROBIN", description="Key rotation strategy"
     )
 
-    # AI Provider Selection
-    ai_provider: Literal["gemini", "openrouter"] = Field(
-        default="openrouter", description="AI provider to use: gemini or openrouter"
+    # AI Features
+    ai_vision_enabled: bool = Field(
+        default=True, description="Enable AI Vision processing pipeline"
+    )
+
+    # Metric Generation Feature
+    enable_metric_generation: bool = Field(
+        default=False, description="Enable AI metric generation from PDF/DOCX reports"
+    )
+    openrouter_metric_model: str = Field(
+        default="google/gemini-2.0-flash-001",
+        description="OpenRouter model for metric generation (vision-capable)",
+    )
+
+    # Embedding / Semantic Search Settings
+    embedding_model: str = Field(
+        default="openai/text-embedding-3-small",
+        description="Model for generating metric embeddings via OpenRouter",
+    )
+    embedding_dimensions: int = Field(
+        default=1536,
+        description="Embedding vector dimensions (must match model output)",
+    )
+    embedding_similarity_threshold: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity score for considering a match",
+    )
+    embedding_top_k: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Number of similar metrics to retrieve for matching",
     )
 
     # Computed Properties
@@ -230,11 +192,6 @@ class Settings(BaseSettings):
         return self._parse_comma_separated(self.allowed_origins)
 
     @property
-    def gemini_keys_list(self) -> list[str]:
-        """Get parsed Gemini API keys as list."""
-        return self._parse_comma_separated(self.gemini_api_keys)
-
-    @property
     def openrouter_keys_list(self) -> list[str]:
         """Get parsed OpenRouter API keys as list."""
         return self._parse_comma_separated(self.openrouter_api_keys)
@@ -243,16 +200,6 @@ class Settings(BaseSettings):
     def report_max_size_bytes(self) -> int:
         """Maximum allowed report size in bytes."""
         return self.report_max_size_mb * 1024 * 1024
-
-    @property
-    def vpn_domains_list(self) -> list[str]:
-        """Get parsed VPN route domains as list."""
-        return self._parse_comma_separated(self.vpn_route_domains)
-
-    @property
-    def vpn_bypass_list(self) -> list[str]:
-        """Get parsed VPN bypass CIDRs as list."""
-        return self._parse_comma_separated(self.vpn_bypass_cidrs)
 
     # Normalize empty strings to None for optional fields sourced from .env
     @field_validator("frozen_time", mode="before")
@@ -271,7 +218,6 @@ class Settings(BaseSettings):
         In test/ci profiles:
         - Enable deterministic mode (frozen time, seeds)
         - Run Celery tasks synchronously (eager mode)
-        - Disable external network calls
         - Propagate exceptions in eager mode
         """
         if self.env in ("test", "ci"):
@@ -340,42 +286,13 @@ def validate_config() -> None:
     if not settings.postgres_dsn:
         raise ValueError("POSTGRES_DSN is required")
 
-    # Validate VPN config if enabled
-    if settings.vpn_enabled:
-        if settings.vpn_type == "hysteria2":
-            if not settings.hysteria2_uri:
-                raise ValueError("HYSTERIA2_URI is required when VPN_TYPE=hysteria2")
-            # Basic URI validation
-            if not settings.hysteria2_uri.startswith("hysteria2://"):
-                raise ValueError("HYSTERIA2_URI must start with 'hysteria2://'")
-        elif settings.vpn_type == "openvpn":
-            if not settings.openvpn_config_path:
-                raise ValueError("OPENVPN_CONFIG_PATH is required when VPN_TYPE=openvpn")
-            ovpn_config = Path(settings.openvpn_config_path)
-            if not ovpn_config.exists():
-                raise ValueError(f"OpenVPN config not found: {settings.openvpn_config_path}")
-        else:
-            # WireGuard or AWG
-            if not settings.wg_config_path:
-                raise ValueError("WG_CONFIG_PATH is required when VPN_TYPE=wireguard or awg")
-            wg_config = Path(settings.wg_config_path)
-            if not wg_config.exists():
-                raise ValueError(f"WireGuard config not found: {settings.wg_config_path}")
-
-    # Check API keys based on selected provider
-    if settings.ai_recommendations_enabled or settings.ai_vision_fallback_enabled:
-        if settings.ai_provider == "openrouter":
-            if not settings.openrouter_keys_list:
-                raise ValueError(
-                    "OPENROUTER_API_KEYS required when AI_PROVIDER=openrouter. "
-                    "Get keys at https://openrouter.ai/keys"
-                )
-        else:  # gemini
-            if not settings.gemini_keys_list:
-                raise ValueError(
-                    "GEMINI_API_KEYS required when AI_PROVIDER=gemini. "
-                    "Get free keys at https://aistudio.google.com/apikey"
-                )
+    # Check OpenRouter API keys if AI is enabled
+    if settings.ai_vision_enabled:
+        if not settings.openrouter_keys_list:
+            raise ValueError(
+                "OPENROUTER_API_KEYS required for AI features. "
+                "Get keys at https://openrouter.ai/keys"
+            )
 
     logger.info(
         "configuration_validated",

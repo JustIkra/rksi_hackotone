@@ -100,30 +100,8 @@ METRIC_DISPLAY_NAMES_RU: Final[dict[str, str]] = {
     "verbal_logic": "Вербальная логика",
     "information_processing": "Обработка информации",
 
-    # Личность (одиночные полюса - LEGACY, используй парные метрики ниже)
-    "introversion": "Замкнутость",
-    "sociability": "Общительность",
-    "passivity": "Пассивность",
-    "activity": "Активность",
-    "distrust": "Недоверчивость",
-    "friendliness": "Дружелюбие",
-    "independence": "Независимость",
-    "conformism": "Конформизм",
-    "moral_flexibility": "Моральная гибкость",
-    "morality": "Моральность",
-    "impulsiveness": "Импульсивность",
-    "anxiety": "Тревожность",
-    "emotional_stability": "Уравновешенность",
-    "sensitivity": "Сензитивность",
-    "insensitivity": "Нечувствительность",
-    "intellectual_restraint": "Интеллектуальная сдержанность",
-    "curiosity": "Любознательность",
-    "traditionality": "Традиционность",
-    "originality": "Оригинальность",
-    "concreteness": "Конкретность",
-    "abstractness": "Абстрактность",
-
     # ПАРНЫЕ МЕТРИКИ (дефисный формат с en-dash)
+    # Одиночные полюса удалены - используем только парные метрики
     # Блок ЛИЧНОСТЬ (11 пар)
     "introversion_sociability": "Замкнутость–Общительность",
     "passivity_activity": "Пассивность–Активность",

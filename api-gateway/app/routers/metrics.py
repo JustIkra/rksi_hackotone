@@ -16,6 +16,7 @@ from app.db.session import get_db
 from app.repositories.metric import ExtractedMetricRepository, MetricDefRepository
 from app.repositories.report import ReportRepository
 from app.schemas.metric import (
+    BulkOperationResult,
     ExtractedMetricBulkCreateRequest,
     ExtractedMetricCreateRequest,
     ExtractedMetricListResponse,
@@ -23,6 +24,8 @@ from app.schemas.metric import (
     ExtractedMetricUpdateRequest,
     ExtractedMetricWithDefResponse,
     MessageResponse,
+    MetricDefBulkDeleteRequest,
+    MetricDefBulkMoveRequest,
     MetricDefCreateRequest,
     MetricDefListResponse,
     MetricDefResponse,
@@ -30,6 +33,15 @@ from app.schemas.metric import (
     MetricMappingResponse,
     MetricTemplateItem,
     MetricTemplateResponse,
+    MetricUsageResponse,
+)
+from app.schemas.metric_import import (
+    ExportMetricItem,
+    ExportResponse,
+    ImportResultResponse,
+)
+from app.schemas.metric_import import (
+    ImportError as ImportErrorSchema,
 )
 from app.services.metric_mapping import get_metric_mapping_service
 
@@ -42,12 +54,12 @@ router = APIRouter(prefix="/api", tags=["metrics"])
 async def create_metric_def(
     request: MetricDefCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    _admin: User = Depends(require_admin),
 ) -> MetricDefResponse:
     """
     Create a new metric definition.
 
-    Requires: ACTIVE user (any role).
+    Requires: ADMIN role.
 
     Request body:
     - code: Unique metric code (required, 1-50 chars)
@@ -57,6 +69,8 @@ async def create_metric_def(
     - min_value: Minimum value (optional)
     - max_value: Maximum value (optional, must be >= min_value)
     - active: Whether metric is active (default: True)
+    - category_id: Category ID for grouping (optional)
+    - sort_order: Sort order within category (default: 0)
 
     Returns: Created metric definition with UUID.
     """
@@ -87,6 +101,8 @@ async def create_metric_def(
         min_value=request.min_value,
         max_value=request.max_value,
         active=request.active,
+        category_id=request.category_id,
+        sort_order=request.sort_order,
     )
     return MetricDefResponse.model_validate(metric_def)
 
@@ -111,6 +127,148 @@ async def list_metric_defs(
     metrics = await repo.list_all(active_only=active_only)
     return MetricDefListResponse(
         items=[MetricDefResponse.model_validate(m) for m in metrics], total=len(metrics)
+    )
+
+
+# IMPORTANT: Fixed routes MUST be defined BEFORE parameterized routes
+# to avoid FastAPI matching "bulk-move" or "bulk-delete" as a UUID parameter
+
+
+@router.patch("/metric-defs/bulk-move", response_model=BulkOperationResult)
+async def bulk_move_metric_defs(
+    request: MetricDefBulkMoveRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> BulkOperationResult:
+    """
+    Move multiple metric definitions to a category (atomic operation).
+
+    Requires: ADMIN role.
+
+    Request body:
+    - metric_ids: List of metric definition UUIDs to move (all must exist)
+    - target_category_id: Target category UUID (null to remove from category)
+
+    All-or-nothing: if any metric_id is not found, the entire operation fails.
+
+    Returns: Operation result with affected count and usage_warning.
+    """
+    repo = MetricDefRepository(db)
+
+    # Validate target category exists if provided
+    if request.target_category_id is not None:
+        from app.repositories.metric_category import MetricCategoryRepository
+
+        category_repo = MetricCategoryRepository(db)
+        category = await category_repo.get_by_id(request.target_category_id)
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Target category {request.target_category_id} not found",
+            )
+
+    # Pre-validate all metric IDs exist (atomic check)
+    errors = []
+    for metric_id in request.metric_ids:
+        metric = await repo.get_by_id(metric_id)
+        if not metric:
+            errors.append({"metric_id": str(metric_id), "error": "Metric not found"})
+
+    if errors:
+        return BulkOperationResult(
+            success=False,
+            affected_count=0,
+            errors=errors,
+        )
+
+    # Gather usage stats for warning
+    total_weight_tables = 0
+    total_extracted = 0
+    for metric_id in request.metric_ids:
+        stats = await repo.get_usage_stats(metric_id)
+        total_weight_tables += stats["weight_tables_count"]
+        total_extracted += stats["extracted_metrics_count"]
+
+    # Perform atomic move
+    affected_count, move_errors = await repo.bulk_move_to_category(
+        metric_ids=request.metric_ids,
+        target_category_id=request.target_category_id,
+    )
+
+    usage_warning = None
+    if total_weight_tables > 0 or total_extracted > 0:
+        usage_warning = {
+            "weight_tables_affected": total_weight_tables,
+            "extracted_metrics_affected": total_extracted,
+        }
+
+    return BulkOperationResult(
+        success=len(move_errors) == 0,
+        affected_count=affected_count,
+        errors=move_errors,
+        usage_warning=usage_warning,
+    )
+
+
+@router.delete("/metric-defs/bulk-delete", response_model=BulkOperationResult)
+async def bulk_delete_metric_defs(
+    request: MetricDefBulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> BulkOperationResult:
+    """
+    Delete multiple metric definitions with CASCADE.
+
+    Requires: ADMIN role.
+
+    Request body:
+    - metric_ids: List of metric definition UUIDs to delete
+
+    Cascade behavior:
+    - Synonyms: automatically deleted
+    - Extracted metrics: automatically deleted
+    - Weight tables: metric removed from JSONB, marked as needs_review
+
+    Returns: Operation result with deleted count, affected counts, and any errors.
+    """
+    from app.repositories.metric_audit import MetricAuditLogRepository
+
+    repo = MetricDefRepository(db)
+
+    # Get metric codes before deletion for audit log
+    metric_codes = []
+    for metric_id in request.metric_ids:
+        metric_def = await repo.get_by_id(metric_id)
+        if metric_def:
+            metric_codes.append(metric_def.code)
+
+    deleted_count, errors, affected_counts = await repo.bulk_delete(
+        metric_ids=request.metric_ids
+    )
+
+    # Log audit entry if any metrics were deleted
+    if deleted_count > 0:
+        audit_repo = MetricAuditLogRepository(db)
+        await audit_repo.create(
+            user_id=admin.id,
+            action="bulk_delete",
+            metric_codes=metric_codes[:deleted_count],  # Only log successfully deleted
+            affected_counts=affected_counts,
+        )
+
+    usage_warning = None
+    if any(affected_counts.values()):
+        usage_warning = {
+            "cascaded_extracted_metrics": affected_counts["extracted_metrics"],
+            "cascaded_synonyms": affected_counts["synonyms"],
+            "weight_tables_affected": affected_counts["weight_tables"],
+        }
+
+    return BulkOperationResult(
+        success=len(errors) == 0,
+        affected_count=deleted_count,
+        errors=errors,
+        usage_warning=usage_warning,
     )
 
 
@@ -141,12 +299,12 @@ async def update_metric_def(
     metric_def_id: UUID,
     request: MetricDefUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    _admin: User = Depends(require_admin),
 ) -> MetricDefResponse:
     """
     Update a metric definition.
 
-    Requires: ACTIVE user (any role).
+    Requires: ADMIN role.
 
     Request body: All fields are optional, only provided fields will be updated.
 
@@ -162,6 +320,8 @@ async def update_metric_def(
         min_value=request.min_value,
         max_value=request.max_value,
         active=request.active,
+        category_id=request.category_id,
+        sort_order=request.sort_order,
     )
     if not metric_def:
         raise HTTPException(
@@ -174,12 +334,12 @@ async def update_metric_def(
 async def delete_metric_def(
     metric_def_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    _admin: User = Depends(require_admin),
 ) -> MessageResponse:
     """
     Delete a metric definition.
 
-    Requires: ACTIVE user (any role).
+    Requires: ADMIN role.
 
     Note: Will fail if there are extracted metrics referencing this definition (due to RESTRICT FK).
 
@@ -192,6 +352,44 @@ async def delete_metric_def(
             status_code=status.HTTP_404_NOT_FOUND, detail="Metric definition not found"
         )
     return MessageResponse(message="Metric definition deleted successfully")
+
+
+@router.get("/metric-defs/{metric_def_id}/usage", response_model=MetricUsageResponse)
+async def get_metric_usage_stats(
+    metric_def_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> MetricUsageResponse:
+    """
+    Get usage statistics for a metric definition.
+
+    Requires: ACTIVE user (any role).
+
+    Use this before deleting a metric to understand the impact.
+
+    Returns: Usage statistics including:
+    - extracted_metrics_count: Number of extracted metric values
+    - weight_tables_count: Number of weight tables using this metric
+    - reports_affected: Number of unique reports with this metric
+    """
+    repo = MetricDefRepository(db)
+
+    # Verify metric exists
+    metric_def = await repo.get_by_id(metric_def_id)
+    if not metric_def:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Metric definition not found"
+        )
+
+    stats = await repo.get_usage_stats(metric_def_id)
+    return MetricUsageResponse(
+        metric_id=stats["metric_id"],
+        extracted_metrics_count=stats["extracted_metrics_count"],
+        participant_metrics_count=stats["participant_metrics_count"],
+        scoring_results_count=stats["scoring_results_count"],
+        weight_tables_count=stats["weight_tables_count"],
+        reports_affected=stats["reports_affected"],
+    )
 
 
 # ExtractedMetric Endpoints
@@ -546,3 +744,104 @@ async def get_metric_mapping(
     mappings = mapping_service.get_mapping()
 
     return MetricMappingResponse(mappings=mappings, total=len(mappings))
+
+
+# Import/Export Endpoints
+
+
+@router.get("/admin/metrics/export", response_model=ExportResponse)
+async def export_metrics(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> ExportResponse:
+    """
+    Export all metric definitions as JSON.
+
+    Requires: ADMIN role.
+
+    Returns: JSON with all metrics suitable for backup/import.
+    """
+    repo = MetricDefRepository(db)
+    metrics = await repo.list_all(active_only=False)
+
+    export_items = [
+        ExportMetricItem(
+            code=m.code,
+            name=m.name,
+            name_ru=m.name_ru,
+            description=m.description,
+            unit=m.unit,
+            min_value=float(m.min_value) if m.min_value is not None else None,
+            max_value=float(m.max_value) if m.max_value is not None else None,
+            active=m.active,
+        )
+        for m in metrics
+    ]
+
+    return ExportResponse(metrics=export_items, total=len(export_items))
+
+
+@router.post("/admin/metrics/import", response_model=ImportResultResponse)
+async def import_metrics(
+    data: ExportResponse,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> ImportResultResponse:
+    """
+    Import metric definitions from JSON (upsert).
+
+    Requires: ADMIN role.
+
+    Request body: JSON with metrics array (same format as export).
+
+    Behavior:
+    - If metric code exists: update fields
+    - If metric code doesn't exist: create new
+
+    Returns: Import result with created/updated counts.
+    """
+    from decimal import Decimal
+
+    repo = MetricDefRepository(db)
+    created = 0
+    updated = 0
+    errors: list[ImportErrorSchema] = []
+
+    for idx, metric_data in enumerate(data.metrics, start=1):
+        try:
+            # Check if metric exists
+            existing = await repo.get_by_code(metric_data.code)
+
+            min_val = Decimal(str(metric_data.min_value)) if metric_data.min_value is not None else None
+            max_val = Decimal(str(metric_data.max_value)) if metric_data.max_value is not None else None
+
+            if existing:
+                # Update existing metric
+                await repo.update(
+                    metric_def_id=existing.id,
+                    name=metric_data.name,
+                    name_ru=metric_data.name_ru,
+                    description=metric_data.description,
+                    unit=metric_data.unit,
+                    min_value=min_val,
+                    max_value=max_val,
+                    active=metric_data.active,
+                )
+                updated += 1
+            else:
+                # Create new metric
+                await repo.create(
+                    code=metric_data.code,
+                    name=metric_data.name,
+                    name_ru=metric_data.name_ru,
+                    description=metric_data.description,
+                    unit=metric_data.unit,
+                    min_value=min_val,
+                    max_value=max_val,
+                    active=metric_data.active,
+                )
+                created += 1
+        except Exception as e:
+            errors.append(ImportErrorSchema(row=idx, error=str(e)))
+
+    return ImportResultResponse(created=created, updated=updated, errors=errors)

@@ -51,6 +51,24 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/admin/competencies',
+      name: 'admin-competencies',
+      component: () => import('@/views/AdminCompetenciesView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/admin/audit-log',
+      name: 'admin-audit-log',
+      component: () => import('@/views/AdminAuditLogView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/admin/metric-generate',
+      name: 'admin-metric-generate',
+      component: () => import('@/views/AdminMetricGenerateView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('@/views/ProfileView.vue'),

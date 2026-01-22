@@ -22,12 +22,13 @@ from app.core.middleware import RequestContextMiddleware
 from app.routers import (
     admin,
     auth,
+    metric_categories,
+    metric_synonyms,
     metrics,
     participants,
     prof_activities,
     reports,
     scoring,
-    vpn,
     weights,
 )
 
@@ -205,9 +206,10 @@ app.include_router(participants.router, prefix="/api")
 app.include_router(prof_activities.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(weights.router, prefix="/api/admin", tags=["Weights"])
+app.include_router(metric_categories.router, prefix="/api", tags=["Metric Categories"])
 app.include_router(metrics.router)
+app.include_router(metric_synonyms.router)
 app.include_router(scoring.router, prefix="/api", tags=["Scoring"])
-app.include_router(vpn.router)
 
 
 # Static Files & SPA Fallback

@@ -403,6 +403,122 @@ class OpenRouterClient:
 
         return await self._request_with_retry(payload, timeout)
 
+    async def create_embedding(
+        self,
+        input_text: str | list[str],
+        model: str | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create embeddings for text using OpenRouter API.
+
+        Args:
+            input_text: Single string or list of strings to embed
+            model: Embedding model (default: openai/text-embedding-3-large)
+            timeout: Request timeout override
+
+        Returns:
+            Raw API response with format:
+            {
+                "data": [{"embedding": [...], "index": 0}],
+                "model": "...",
+                "usage": {"prompt_tokens": N, "total_tokens": N}
+            }
+        """
+        effective_model = model or "openai/text-embedding-3-large"
+        effective_timeout = timeout or self.timeout_s
+
+        payload: dict[str, Any] = {
+            "model": effective_model,
+            "input": input_text,
+        }
+
+        url = f"{self.base_url}/embeddings"
+        headers = self._build_headers()
+
+        # Calculate input size for logging
+        if isinstance(input_text, str):
+            input_count = 1
+            total_chars = len(input_text)
+        else:
+            input_count = len(input_text)
+            total_chars = sum(len(t) for t in input_text)
+
+        logger.debug(
+            "openrouter_create_embedding",
+            extra={
+                "model": effective_model,
+                "input_count": input_count,
+                "total_chars": total_chars,
+            },
+        )
+
+        last_error: Exception | None = None
+
+        for attempt in range(self.max_retries):
+            try:
+                response = await self.transport.request(
+                    method="POST",
+                    url=url,
+                    headers=headers,
+                    json=payload,
+                    timeout=effective_timeout,
+                )
+
+                logger.debug(
+                    "openrouter_embedding_success",
+                    extra={
+                        "model": effective_model,
+                        "usage": response.get("usage"),
+                    },
+                )
+
+                return response
+
+            except (OpenRouterRateLimitError, OpenRouterServerError, OpenRouterTimeoutError) as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    if isinstance(e, OpenRouterRateLimitError) and e.retry_after:
+                        delay = min(e.retry_after, 60)
+                    else:
+                        delay = 2 ** attempt  # 1, 2, 4 seconds
+
+                    logger.warning(
+                        "openrouter_embedding_retry",
+                        extra={
+                            "attempt": attempt + 1,
+                            "max_retries": self.max_retries,
+                            "delay_s": delay,
+                            "error": str(e),
+                        },
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+
+            except OpenRouterServiceError as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    logger.warning(
+                        "openrouter_embedding_service_error_retry",
+                        extra={
+                            "attempt": attempt + 1,
+                            "delay_s": 30,
+                            "error": str(e),
+                        },
+                    )
+                    await asyncio.sleep(30)
+                else:
+                    raise
+
+            except (OpenRouterAuthError, OpenRouterValidationError):
+                # Non-retryable errors
+                raise
+
+        if last_error:
+            raise last_error
+        raise OpenRouterClientError("Max retries exceeded for embedding request")
+
     async def close(self) -> None:
         """Close client resources."""
         await self.transport.close()

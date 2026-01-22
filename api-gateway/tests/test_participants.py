@@ -8,7 +8,6 @@ scoring history, and final report generation.
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
 
 import pytest
 from httpx import AsyncClient
@@ -19,13 +18,10 @@ from app.db.models import (
     Participant,
     ParticipantMetric,
     ProfActivity,
-    Report,
     ScoringResult,
     WeightTable,
 )
-from app.services.auth import create_access_token
 from tests.conftest import get_auth_header
-
 
 # Fixtures
 
@@ -189,11 +185,6 @@ async def participant_with_scoring(
                 "weight": "0.3",
             }
         ],
-        recommendations=[
-            {"title": "Team building workshop", "link_url": "http://example.com", "priority": 1}
-        ],
-        recommendations_status="ready",
-        recommendations_error=None,
         computed_at=datetime.utcnow(),
         compute_notes="Test scoring",
     )
@@ -772,10 +763,8 @@ async def test_get_scoring_history_with_data(
     assert result["id"] == str(scoring_result.id)
     assert result["prof_activity_code"] == prof_activity.code
     assert result["score_pct"] == 85.5
-    assert result["recommendations_status"] == "ready"
     assert len(result["strengths"]) == 1
     assert len(result["dev_areas"]) == 1
-    assert len(result["recommendations"]) == 1
 
 
 @pytest.mark.integration
@@ -868,7 +857,7 @@ async def test_get_final_report_json(
     assert "score_pct" in data
     assert "strengths" in data
     assert "dev_areas" in data
-    assert "recommendations" in data
+    # recommendations field removed in cleanup
     assert "metrics" in data
 
 

@@ -27,6 +27,8 @@ class MetricDefBase(BaseModel):
     min_value: Decimal | None = Field(None, description="Minimum allowed value")
     max_value: Decimal | None = Field(None, description="Maximum allowed value")
     active: bool = Field(True, description="Whether metric is active")
+    category_id: UUID | None = Field(None, description="Category ID for grouping")
+    sort_order: int = Field(0, ge=0, description="Sort order within category")
 
 
 class MetricDefCreateRequest(MetricDefBase):
@@ -56,6 +58,8 @@ class MetricDefUpdateRequest(BaseModel):
     min_value: Decimal | None = None
     max_value: Decimal | None = None
     active: bool | None = None
+    category_id: UUID | None = Field(None, description="Category ID for grouping")
+    sort_order: int | None = Field(None, ge=0, description="Sort order within category")
 
 
 class MetricDefResponse(BaseModel):
@@ -70,6 +74,8 @@ class MetricDefResponse(BaseModel):
     min_value: Decimal | None
     max_value: Decimal | None
     active: bool
+    category_id: UUID | None = None
+    sort_order: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -94,6 +100,17 @@ class MetricDefListResponse(BaseModel):
 
     items: list[MetricDefResponse]
     total: int
+
+
+class MetricUsageResponse(BaseModel):
+    """Response schema for metric usage statistics."""
+
+    metric_id: UUID
+    extracted_metrics_count: int = Field(..., description="Number of extracted metric values")
+    participant_metrics_count: int = Field(0, description="Number of participant metric values")
+    scoring_results_count: int = Field(0, description="Number of scoring results affected")
+    weight_tables_count: int = Field(..., description="Number of weight tables using this metric")
+    reports_affected: int = Field(..., description="Number of unique reports with this metric")
 
 
 # ExtractedMetric Schemas
@@ -171,6 +188,17 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class TopCompetency(BaseModel):
+    """Top competency item for final report - sorted by contribution (value × weight)."""
+
+    metric_code: str = Field(..., description="Metric code")
+    metric_name: str = Field(..., description="Metric name in English")
+    metric_name_ru: str = Field(..., description="Metric name in Russian")
+    value: Decimal = Field(..., description="Metric value (1-10)")
+    weight: Decimal = Field(..., description="Weight (0-1)")
+    contribution: Decimal = Field(..., description="Contribution to score (value × weight)")
+
+
 # Metric Template Schemas
 
 class MetricTemplateItem(BaseModel):
@@ -201,3 +229,41 @@ class MetricMappingResponse(BaseModel):
         ..., description="Dictionary of label (uppercase) -> metric_code mappings"
     )
     total: int = Field(..., description="Total number of mappings")
+
+
+# Bulk Operations Schemas
+
+
+class MetricDefBulkMoveRequest(BaseModel):
+    """Request schema for bulk moving metric definitions to a category."""
+
+    metric_ids: list[UUID] = Field(
+        ..., min_length=1, description="List of metric definition IDs to move"
+    )
+    target_category_id: UUID | None = Field(
+        None, description="Target category ID (null for uncategorized)"
+    )
+
+
+class MetricDefBulkDeleteRequest(BaseModel):
+    """Request schema for bulk deleting metric definitions."""
+
+    metric_ids: list[UUID] = Field(
+        ..., min_length=1, description="List of metric definition IDs to delete"
+    )
+
+
+class BulkMoveUsageWarning(BaseModel):
+    """Usage warning for bulk move operation."""
+
+    weight_tables_affected: int = Field(0, description="Number of weight tables affected")
+    extracted_metrics_affected: int = Field(0, description="Number of extracted metrics affected")
+
+
+class BulkOperationResult(BaseModel):
+    """Response schema for bulk operations."""
+
+    success: bool = Field(..., description="Whether the operation was successful")
+    affected_count: int = Field(..., description="Number of items affected")
+    errors: list[dict] = Field(default_factory=list, description="List of error objects if any")
+    usage_warning: dict | None = Field(None, description="Usage warning for move operations")

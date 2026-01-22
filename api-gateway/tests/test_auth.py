@@ -22,7 +22,6 @@ from app.core.config import settings
 from app.db.models import User
 from app.services.auth import create_access_token, hash_password
 
-
 # ============================================================================
 # Registration Tests
 # ============================================================================

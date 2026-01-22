@@ -15,7 +15,7 @@ import io
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -497,7 +497,8 @@ async def test_delete_report_success(
     # Verify database cleanup
     db_session.expire_all()  # Not async
     from sqlalchemy import select
-    from app.db.models import Report, FileRef
+
+    from app.db.models import FileRef, Report
 
     result = await db_session.execute(select(Report).where(Report.id == report.id))
     assert result.scalar_one_or_none() is None

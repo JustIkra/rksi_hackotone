@@ -27,10 +27,7 @@ class ScoringResultRepository:
         score_pct: Decimal,
         strengths: list[dict] | None = None,
         dev_areas: list[dict] | None = None,
-        recommendations: list[dict] | None = None,
         compute_notes: str | None = None,
-        recommendations_status: str = "pending",
-        recommendations_error: str | None = None,
     ) -> ScoringResult:
         """
         Create a new scoring result.
@@ -41,7 +38,6 @@ class ScoringResultRepository:
             score_pct: Calculated score as percentage (0-100)
             strengths: Optional JSONB array of strengths
             dev_areas: Optional JSONB array of development areas
-            recommendations: Optional JSONB array of recommendations
             compute_notes: Optional notes about the computation
 
         Returns:
@@ -53,10 +49,7 @@ class ScoringResultRepository:
             score_pct=score_pct,
             strengths=strengths,
             dev_areas=dev_areas,
-            recommendations=recommendations,
             compute_notes=compute_notes,
-            recommendations_status=recommendations_status,
-            recommendations_error=recommendations_error,
         )
         self.db.add(scoring_result)
         await self.db.commit()

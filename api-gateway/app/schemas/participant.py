@@ -5,7 +5,6 @@ All request/response DTOs for participant management.
 """
 
 from datetime import date, datetime
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -89,10 +88,7 @@ class ScoringHistoryItem(BaseModel):
     score_pct: float
     strengths: list[MetricItem] | None = None
     dev_areas: list[MetricItem] | None = None
-    recommendations: list[dict] | None = None  # AI-09: Changed from list[str] to list[dict] to support full recommendation objects
     created_at: datetime
-    recommendations_status: Literal["pending", "ready", "error", "disabled"] = "pending"
-    recommendations_error: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -121,7 +117,7 @@ class ParticipantMetricResponse(BaseModel):
     def model_validate(cls, obj, **kwargs):
         """Override model_validate to handle Decimal conversion."""
         from decimal import Decimal
-        
+
         # Convert Decimal to float if needed
         if hasattr(obj, 'value') and isinstance(obj.value, Decimal):
             obj_dict = {
@@ -131,8 +127,8 @@ class ParticipantMetricResponse(BaseModel):
                 'last_source_report_id': obj.last_source_report_id,
                 'updated_at': obj.updated_at,
             }
-            return super(ParticipantMetricResponse, cls).model_validate(obj_dict, **kwargs)
-        return super(ParticipantMetricResponse, cls).model_validate(obj, **kwargs)
+            return super().model_validate(obj_dict, **kwargs)
+        return super().model_validate(obj, **kwargs)
 
 
 class ParticipantMetricsListResponse(BaseModel):

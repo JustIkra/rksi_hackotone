@@ -13,18 +13,16 @@ Markers:
 """
 
 import io
-import re
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PIL import Image
 
 from app.services.metric_extraction import (
-    MetricExtractionService,
-    ExtractedMetricData,
-    MetricExtractionError,
     VALUE_PATTERN,
+    ExtractedMetricData,
+    MetricExtractionService,
 )
 
 

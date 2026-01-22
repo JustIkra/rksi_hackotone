@@ -35,6 +35,15 @@
             <el-menu-item index="/admin/weights">
               Весовые таблицы
             </el-menu-item>
+            <el-menu-item index="/admin/competencies">
+              Словарь компетенций
+            </el-menu-item>
+            <el-menu-item index="/admin/metric-generate">
+              AI Генерация
+            </el-menu-item>
+            <el-menu-item index="/admin/audit-log">
+              Журнал аудита
+            </el-menu-item>
           </el-sub-menu>
         </el-menu>
 

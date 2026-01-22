@@ -1,6 +1,7 @@
 """PDF generation service using WeasyPrint."""
 import logging
-from weasyprint import HTML, CSS
+
+from weasyprint import CSS, HTML
 from weasyprint.text.fonts import FontConfiguration
 
 logger = logging.getLogger(__name__)

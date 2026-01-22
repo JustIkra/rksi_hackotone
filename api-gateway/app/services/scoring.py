@@ -4,19 +4,16 @@ Scoring service for calculating professional fitness scores.
 Implements:
 - Formula: score_pct = Σ(value × weight) × 10
 - Strengths/dev_areas generation
-- AI recommendations generation via Celery
 
 With Decimal precision and quantization to 0.01.
 """
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Union
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.ai_factory import AIClient
 from app.repositories.metric import ExtractedMetricRepository
 from app.repositories.participant_metric import ParticipantMetricRepository
 from app.repositories.prof_activity import ProfActivityRepository
@@ -26,11 +23,8 @@ from app.repositories.scoring_result import ScoringResultRepository
 class ScoringService:
     """Service for calculating professional fitness scores."""
 
-    def __init__(
-        self, db: AsyncSession, ai_client: AIClient | None = None
-    ):
+    def __init__(self, db: AsyncSession):
         self.db = db
-        self.ai_client = ai_client
         self.extracted_metric_repo = ExtractedMetricRepository(db)
         self.participant_metric_repo = ParticipantMetricRepository(db)
         self.prof_activity_repo = ProfActivityRepository(db)
@@ -40,7 +34,6 @@ class ScoringService:
         self,
         participant_id: UUID,
         prof_activity_code: str,
-        report_ids: list[UUID] | None = None,
     ) -> dict:
         """
         Calculate professional fitness score for a participant.
@@ -48,8 +41,6 @@ class ScoringService:
         Args:
             participant_id: UUID of the participant
             prof_activity_code: Code of the professional activity
-            report_ids: Optional list of report IDs to use for metrics.
-                       If None, uses all reports for the participant.
 
         Returns:
             Dictionary with:
@@ -85,7 +76,7 @@ class ScoringService:
         # 5. Get participant metrics (S2-08: from participant_metric table)
         metrics_map = await self.participant_metric_repo.get_metrics_dict(participant_id)
 
-        # 5b. Load MetricDef for names (needed for strengths/dev_areas/recommendations)
+        # 5b. Load MetricDef for names (needed for strengths/dev_areas)
         from app.repositories.metric import MetricDefRepository
 
         metric_def_repo = MetricDefRepository(self.db)
@@ -139,57 +130,22 @@ class ScoringService:
             metric_def_by_code=metric_def_by_code,
         )
 
-        # 9. Generate AI recommendations (AI-08) - async via Celery
-        # Save scoring result first, then trigger async recommendations generation
-        recommendations = None
-        recommendations_status = "pending"
-        if not settings.ai_recommendations_enabled or self.ai_client is None:
-            recommendations_status = "disabled"
+        # 8b. Generate top competencies (sorted by contribution)
+        top_competencies = self._generate_top_competencies(
+            metrics_map=metrics_map,
+            weights_map=weights_map,
+            metric_def_by_code=metric_def_by_code,
+        )
 
-        # 10. Save scoring result to database (without recommendations initially)
+        # 9. Save scoring result to database
         scoring_result = await self.scoring_result_repo.create(
             participant_id=participant_id,
             weight_table_id=weight_table.id,
             score_pct=score_pct,
             strengths=strengths,
             dev_areas=dev_areas,
-            recommendations=None,  # Will be updated by Celery task
             compute_notes="Score calculated using current weight table",
-            recommendations_status=recommendations_status,
         )
-
-        # 11. Trigger async recommendations generation (AI-08)
-        if recommendations_status == "pending":
-            from app.tasks.recommendations import generate_report_recommendations
-
-            # Launch Celery task
-            task = generate_report_recommendations.delay(
-                scoring_result_id=str(scoring_result.id),
-            )
-
-            # In eager mode (tests/CI), wait for result synchronously
-            if settings.celery_task_always_eager:
-                try:
-                    task.get(timeout=30)
-                    # Refresh scoring_result from DB to get updated recommendations
-                    await self.db.refresh(scoring_result)
-                    recommendations = scoring_result.recommendations
-                    recommendations_status = scoring_result.recommendations_status
-                except Exception as e:
-                    # Log error but don't fail scoring calculation
-                    import logging
-
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        f"Recommendations generation failed in eager mode: {e}",
-                        exc_info=True,
-                    )
-                    recommendations_status = "error"
-                    scoring_result.recommendations_status = "error"
-                    scoring_result.recommendations_error = str(e)
-                    await self.db.commit()
-                    await self.db.refresh(scoring_result)
-                    recommendations = scoring_result.recommendations
 
         return {
             "scoring_result_id": str(scoring_result.id),
@@ -201,9 +157,7 @@ class ScoringService:
             "prof_activity_name": prof_activity.name,
             "strengths": strengths,
             "dev_areas": dev_areas,
-            "recommendations": recommendations,
-            "recommendations_status": recommendations_status,
-            "recommendations_error": scoring_result.recommendations_error,
+            "top_competencies": top_competencies,
         }
 
     def _generate_strengths_and_dev_areas(
@@ -263,6 +217,57 @@ class ScoringService:
         dev_areas = dev_areas_sorted[:5]
 
         return strengths, dev_areas
+
+    def _generate_top_competencies(
+        self,
+        metrics_map: dict[str, Decimal],
+        weights_map: dict[str, Decimal],
+        metric_def_by_code: dict[str, Any],
+        top_n: int = 5,
+    ) -> list[dict]:
+        """
+        Generate top N competencies sorted by contribution (value × weight).
+
+        This is different from strengths which is sorted by value alone.
+        Top competencies represent the metrics that contribute most to the final score.
+
+        Args:
+            metrics_map: Mapping of metric_code -> value
+            weights_map: Mapping of metric_code -> weight
+            metric_def_by_code: Mapping of metric_code -> MetricDef
+            top_n: Number of top competencies to return (default: 5)
+
+        Returns:
+            List of top competencies sorted by contribution DESC
+        """
+        competencies = []
+        for metric_code, value in metrics_map.items():
+            if metric_code not in weights_map:
+                continue
+            metric_def = metric_def_by_code.get(metric_code)
+            if not metric_def:
+                continue
+
+            weight = weights_map[metric_code]
+            contribution = (value * weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+            competencies.append(
+                {
+                    "metric_code": metric_code,
+                    "metric_name": metric_def.name,
+                    "metric_name_ru": metric_def.name_ru or metric_def.name,
+                    "value": str(value),
+                    "weight": str(weight),
+                    "contribution": str(contribution),
+                }
+            )
+
+        # Sort by contribution DESC, then by metric_code ASC for stability
+        competencies.sort(
+            key=lambda x: (-Decimal(x["contribution"]), x["metric_code"])
+        )
+
+        return competencies[:top_n]
 
     async def generate_final_report(
         self,
@@ -375,6 +380,15 @@ class ScoringService:
         # Sort by code for consistency
         detailed_metrics.sort(key=lambda x: x["code"])
 
+        # 7b. Generate top competencies (sorted by contribution)
+        # Build metrics_map_decimal from participant_metrics for the helper method
+        metrics_map_decimal = {metric.metric_code: metric.value for metric in participant_metrics}
+        top_competencies = self._generate_top_competencies(
+            metrics_map=metrics_map_decimal,
+            weights_map=weights_map,
+            metric_def_by_code=metric_def_by_code,
+        )
+
         # 8. Transform strengths to final report format
         strengths_items = []
         if scoring_result.strengths:
@@ -389,7 +403,7 @@ class ScoringService:
                         if metric_def
                         else (metric_code or "Неизвестная метрика")
                     )
-                
+
                 strengths_items.append(
                     {
                         "title": metric_name,
@@ -412,7 +426,7 @@ class ScoringService:
                         if metric_def
                         else (metric_code or "Неизвестная метрика")
                     )
-                
+
                 dev_areas_items.append(
                     {
                         "title": metric_name,
@@ -433,8 +447,6 @@ class ScoringService:
         if scoring_result.compute_notes:
             notes += f"; {scoring_result.compute_notes}"
 
-        recommendations_list = scoring_result.recommendations or []
-
         return {
             # Header
             "participant_id": participant_id,
@@ -445,13 +457,11 @@ class ScoringService:
             "weight_table_id": str(weight_table.id),
             # Score
             "score_pct": scoring_result.score_pct,
+            # Top competencies (sorted by contribution)
+            "top_competencies": top_competencies,
             # Strengths and dev areas
             "strengths": strengths_items,
             "dev_areas": dev_areas_items,
-            # Recommendations (AI-generated when available)
-            "recommendations": recommendations_list,
-            "recommendations_status": scoring_result.recommendations_status,
-            "recommendations_error": scoring_result.recommendations_error,
             # Metrics
             "metrics": detailed_metrics,
             # Notes
