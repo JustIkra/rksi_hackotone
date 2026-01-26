@@ -112,7 +112,10 @@ class TestMetricSynonymCRUD:
         )
 
         assert response2.status_code == 409
-        assert "already exists" in response2.json()["detail"].lower()
+        detail = response2.json()["detail"]
+        # detail can be dict {"message": "...", "existing_metric": {...}} or string
+        detail_msg = detail["message"] if isinstance(detail, dict) else detail
+        assert "already exists" in detail_msg.lower()
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -167,7 +170,10 @@ class TestMetricSynonymCRUD:
         )
 
         assert response2.status_code == 409
-        assert "already exists" in response2.json()["detail"].lower()
+        detail = response2.json()["detail"]
+        # detail can be dict {"message": "...", "existing_metric": {...}} or string
+        detail_msg = detail["message"] if isinstance(detail, dict) else detail
+        assert "already exists" in detail_msg.lower()
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -330,7 +336,10 @@ class TestMetricSynonymCRUD:
         )
 
         assert response.status_code == 409
-        assert "already exists" in response.json()["detail"].lower()
+        detail = response.json()["detail"]
+        # detail can be dict {"message": "...", "existing_metric": {...}} or string
+        detail_msg = detail["message"] if isinstance(detail, dict) else detail
+        assert "already exists" in detail_msg.lower()
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -657,7 +666,10 @@ class TestMetricSynonymConflicts:
 
         # Should be rejected as it conflicts with metric name
         assert response.status_code == 409
-        assert "conflicts" in response.json()["detail"].lower()
+        detail = response.json()["detail"]
+        # detail can be dict or string
+        detail_msg = detail["message"] if isinstance(detail, dict) else detail
+        assert "conflicts" in detail_msg.lower()
 
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -680,4 +692,7 @@ class TestMetricSynonymConflicts:
 
         # Should be rejected as it conflicts with metric name_ru
         assert response.status_code == 409
-        assert "conflicts" in response.json()["detail"].lower()
+        detail = response.json()["detail"]
+        # detail can be dict or string
+        detail_msg = detail["message"] if isinstance(detail, dict) else detail
+        assert "conflicts" in detail_msg.lower()
