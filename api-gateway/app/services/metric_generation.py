@@ -39,8 +39,14 @@ from app.services.embedding import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
-# Constants
-PROMPTS_PATH = Path(__file__).parent.parent.parent.parent / "config" / "prompts" / "metric-extraction.json"
+# Path candidates for Docker and local environments
+# In Docker: /app/app/services/metric_generation.py -> /app/config/prompts/...
+# Locally: .../api-gateway/app/services/metric_generation.py -> .../config/prompts/...
+_PROMPTS_CANDIDATES = [
+    Path(__file__).parent.parent.parent / "config" / "prompts" / "metric-extraction.json",  # Docker: /app/config/...
+    Path(__file__).parent.parent.parent.parent / "config" / "prompts" / "metric-extraction.json",  # Local: ../config/...
+]
+PROMPTS_PATH = next((p for p in _PROMPTS_CANDIDATES if p.exists()), _PROMPTS_CANDIDATES[0])
 MAX_IMAGE_SIZE = 4 * 1024 * 1024  # 4MB per image
 DPI = 150  # Resolution for PDF rendering
 
@@ -339,10 +345,12 @@ class MetricGenerationService:
             for c in existing_categories
         )
 
-        return template.format(
-            existing_metrics=metrics_str or "Нет существующих метрик",
-            existing_synonyms=synonyms_str or "Нет синонимов",
-            existing_categories=categories_str or "Нет категорий",
+        # Use replace() instead of format() to avoid conflicts with JSON {} in prompt
+        return (
+            template
+            .replace("{existing_metrics}", metrics_str or "Нет существующих метрик")
+            .replace("{existing_synonyms}", synonyms_str or "Нет синонимов")
+            .replace("{existing_categories}", categories_str or "Нет категорий")
         )
 
     def _build_review_prompt(
@@ -364,9 +372,11 @@ class MetricGenerationService:
             for m in existing_metrics[:50]
         )
 
-        return template.format(
-            extracted_metrics=metrics_json,
-            existing_metrics=existing_str or "Нет существующих метрик",
+        # Use replace() instead of format() to avoid conflicts with JSON {} in prompt
+        return (
+            template
+            .replace("{extracted_metrics}", metrics_json)
+            .replace("{existing_metrics}", existing_str or "Нет существующих метрик")
         )
 
     def _parse_ai_response(self, response: dict[str, Any]) -> dict[str, Any]:
@@ -438,10 +448,33 @@ class MetricGenerationService:
         parsed = self._parse_ai_response(response)
         metrics: list[ExtractedMetricData] = []
 
-        for m in parsed.get("metrics", []):
+        # Handle case where AI returns a list directly instead of {"metrics": [...]}
+        if isinstance(parsed, list):
+            metrics_list = parsed
+        elif isinstance(parsed, dict):
+            metrics_list = parsed.get("metrics", [])
+        else:
+            logger.warning(f"Unexpected AI response type: {type(parsed).__name__}, value: {str(parsed)[:200]}")
+            metrics_list = []
+
+        for m in metrics_list:
             try:
+                # Skip non-dict items
+                if not isinstance(m, dict):
+                    logger.warning(f"Skipping non-dict metric item: {type(m).__name__}")
+                    continue
+
+                # Handle alternative key names from AI responses
+                name = m.get("name") or m.get("metric_name") or m.get("название") or m.get("title")
+                if not name:
+                    logger.warning(f"Skipping metric without name: {m}")
+                    continue
+
+                # Handle alternative value keys
+                value = m.get("value") or m.get("metric_value") or m.get("значение")
+
                 rationale = None
-                if m.get("rationale"):
+                if m.get("rationale") and isinstance(m.get("rationale"), dict):
                     rationale = AIRationale(
                         quotes=m["rationale"].get("quotes", []),
                         page_numbers=m["rationale"].get("page_numbers", [page_number]),
@@ -449,14 +482,14 @@ class MetricGenerationService:
                     )
 
                 metrics.append(ExtractedMetricData(
-                    name=m["name"],
-                    description=m.get("description"),
-                    value=m.get("value"),
-                    category=m.get("category"),
+                    name=name,
+                    description=m.get("description") or m.get("описание"),
+                    value=value,
+                    category=m.get("category") or m.get("категория"),
                     synonyms=m.get("synonyms", []),
                     rationale=rationale,
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse metric: {e}, data: {m}")
                 continue
 
@@ -492,10 +525,33 @@ class MetricGenerationService:
         parsed = self._parse_ai_response(response)
         reviewed_metrics: list[ExtractedMetricData] = []
 
-        for m in parsed.get("metrics", []):
+        # Handle case where AI returns a list directly instead of {"metrics": [...]}
+        if isinstance(parsed, list):
+            metrics_list = parsed
+        elif isinstance(parsed, dict):
+            metrics_list = parsed.get("metrics", [])
+        else:
+            logger.warning(f"Unexpected AI review response type: {type(parsed).__name__}, value: {str(parsed)[:200]}")
+            metrics_list = []
+
+        for m in metrics_list:
             try:
+                # Skip non-dict items
+                if not isinstance(m, dict):
+                    logger.warning(f"Skipping non-dict metric item: {type(m).__name__}")
+                    continue
+
+                # Handle alternative key names from AI responses
+                name = m.get("name") or m.get("metric_name") or m.get("название") or m.get("title")
+                if not name:
+                    logger.warning(f"Skipping reviewed metric without name: {m}")
+                    continue
+
+                # Handle alternative value keys
+                value = m.get("value") or m.get("metric_value") or m.get("значение")
+
                 rationale = None
-                if m.get("rationale"):
+                if m.get("rationale") and isinstance(m.get("rationale"), dict):
                     rationale = AIRationale(
                         quotes=m["rationale"].get("quotes", []),
                         page_numbers=m["rationale"].get("page_numbers"),
@@ -503,21 +559,29 @@ class MetricGenerationService:
                     )
 
                 reviewed_metrics.append(ExtractedMetricData(
-                    name=m["name"],
-                    description=m.get("description"),
-                    value=m.get("value"),
-                    category=m.get("category"),
+                    name=name,
+                    description=m.get("description") or m.get("описание"),
+                    value=value,
+                    category=m.get("category") or m.get("категория"),
                     synonyms=m.get("synonyms", []),
                     rationale=rationale,
                 ))
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse reviewed metric: {e}")
                 continue
 
+        # Handle case where parsed is a list (no metadata) vs dict (with metadata)
+        if isinstance(parsed, dict):
+            removed_duplicates = parsed.get("removed_duplicates", 0)
+            corrections_made = parsed.get("corrections_made", 0)
+        else:
+            removed_duplicates = 0
+            corrections_made = 0
+
         return AIReviewResult(
             metrics=reviewed_metrics,
-            removed_duplicates=parsed.get("removed_duplicates", 0),
-            corrections_made=parsed.get("corrections_made", 0),
+            removed_duplicates=removed_duplicates,
+            corrections_made=corrections_made,
         )
 
     # ==================== Database Operations ====================
@@ -783,10 +847,10 @@ class MetricGenerationService:
             )
             parsed = self._parse_ai_response(response)
 
-            if "is_duplicate" in parsed:
+            if isinstance(parsed, dict) and "is_duplicate" in parsed:
                 return parsed
             else:
-                logger.warning(f"AI match decision missing required fields: {parsed}")
+                logger.warning(f"AI match decision missing required fields or wrong type: {type(parsed).__name__}, {str(parsed)[:200]}")
                 return {"is_duplicate": False, "matched_code": None, "confidence": 0.0}
 
         except Exception as e:

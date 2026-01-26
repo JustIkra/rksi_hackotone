@@ -375,3 +375,22 @@ async def user_only_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClie
             active_user.id, active_user.email, active_user.role
         ))
         yield ac
+
+
+# Storage fixtures for tests that need file system access
+
+import tempfile
+from unittest.mock import patch
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def mock_file_storage():
+    """
+    Auto-apply mock for file storage base path.
+
+    Patches settings.file_storage_base to use a temporary directory
+    instead of /app/storage (Docker path) which doesn't exist locally.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch.object(settings, 'file_storage_base', tmpdir):
+            yield tmpdir
