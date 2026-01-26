@@ -158,8 +158,8 @@ class MetricGenerationService:
         Raises:
             RuntimeError: If pandoc is not installed or conversion fails
         """
-        import tempfile
         import shutil
+        import tempfile
 
         # Check if pandoc is available
         if not shutil.which("pandoc"):
