@@ -1049,32 +1049,47 @@ class MetricGenerationService:
 
             # Step 5: Save to database with semantic matching
             for metric_data in reviewed.metrics:
-                # First try exact match (fast)
-                existing = await self.match_existing_metric(
-                    metric_data, existing_metrics, existing_synonyms
-                )
-
-                if existing:
-                    result["metrics_matched"] += 1
-                    logger.debug(f"Exact match: '{metric_data.name}' → '{existing.name}'")
-                    continue
-
-                # Try semantic matching (slower but smarter)
-                matched, similarity = await self.match_metric_semantic(metric_data)
-
-                if matched:
-                    result["metrics_matched"] += 1
-                    # Add extracted name as synonym to help future matching
-                    await self._add_synonym_if_new(matched.id, metric_data.name)
-                    logger.info(
-                        f"Semantic match: '{metric_data.name}' → '{matched.name}' "
-                        f"(similarity={similarity:.2f})"
+                try:
+                    # First try exact match (fast)
+                    existing = await self.match_existing_metric(
+                        metric_data, existing_metrics, existing_synonyms
                     )
-                else:
-                    # Create new pending metric
-                    await self.create_pending_metric(metric_data)
-                    result["metrics_created"] += 1
-                    result["synonyms_suggested"] += len(metric_data.synonyms)
+
+                    if existing:
+                        result["metrics_matched"] += 1
+                        logger.debug(f"Exact match: '{metric_data.name}' → '{existing.name}'")
+                        continue
+
+                    # Try semantic matching (slower but smarter)
+                    matched, similarity = await self.match_metric_semantic(metric_data)
+
+                    if matched:
+                        result["metrics_matched"] += 1
+                        # Add extracted name as synonym to help future matching
+                        await self._add_synonym_if_new(matched.id, metric_data.name)
+                        logger.info(
+                            f"Semantic match: '{metric_data.name}' → '{matched.name}' "
+                            f"(similarity={similarity:.2f})"
+                        )
+                    else:
+                        # Create new pending metric
+                        await self.create_pending_metric(metric_data)
+                        result["metrics_created"] += 1
+                        result["synonyms_suggested"] += len(metric_data.synonyms)
+
+                except Exception as e:
+                    # Log error but continue processing remaining metrics
+                    logger.warning(
+                        f"Error processing metric '{metric_data.name}': {e}",
+                        exc_info=True,
+                    )
+                    result["warnings"].append(f"Ошибка обработки метрики '{metric_data.name}': {str(e)}")
+                    # Ensure transaction is in clean state
+                    try:
+                        await self.db.rollback()
+                    except Exception:
+                        pass  # Already rolled back
+                    continue
 
             await self.db.commit()
 

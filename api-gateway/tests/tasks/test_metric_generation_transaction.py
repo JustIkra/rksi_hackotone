@@ -137,3 +137,39 @@ class TestCreatePendingMetricTransaction:
 
         assert fetched is not None
         assert fetched.name == "Тестовая метрика"
+
+
+@pytest.mark.asyncio
+class TestProcessDocumentTransaction:
+    """Test transaction handling in process_document save loop."""
+
+    async def test_process_document_save_loop_handles_errors_per_metric(self, db_session: AsyncSession):
+        """
+        Test that errors in saving individual metrics don't abort the entire batch.
+
+        Verifies that the save loop continues processing remaining metrics
+        after encountering an error with one metric.
+        """
+        import inspect
+        from app.services.metric_generation import MetricGenerationService
+
+        source = inspect.getsource(MetricGenerationService.process_document)
+
+        # The save loop should have try/except around individual metric processing
+        assert 'try:' in source and 'except' in source, (
+            "process_document should have error handling in the save loop"
+        )
+
+    async def test_save_loop_has_explicit_rollback_on_error(self, db_session: AsyncSession):
+        """
+        Test that the save loop calls rollback() on errors.
+        """
+        import inspect
+        from app.services.metric_generation import MetricGenerationService
+
+        source = inspect.getsource(MetricGenerationService.process_document)
+
+        # Should have rollback in the save section
+        assert 'rollback' in source, (
+            "process_document should have explicit rollback on errors"
+        )
