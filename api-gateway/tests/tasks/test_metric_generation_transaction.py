@@ -1,0 +1,89 @@
+# tests/tasks/test_metric_generation_transaction.py
+"""
+Unit tests for transaction handling in MetricGenerationService.
+
+Tests cover:
+- get_or_create_category handles IntegrityError gracefully
+- Savepoint pattern prevents transaction abortion
+- Session remains usable after constraint violations
+"""
+
+import pytest
+import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.metric_generation import MetricGenerationService
+from app.db.models import MetricCategory
+
+
+@pytest.mark.asyncio
+class TestGetOrCreateCategoryTransaction:
+    """Test transaction handling in get_or_create_category."""
+
+    async def test_get_or_create_category_handles_integrity_error(self, db_session: AsyncSession):
+        """
+        Test that IntegrityError during category creation is handled gracefully.
+
+        When two concurrent requests try to create the same category,
+        the second should catch IntegrityError and return the existing category
+        instead of failing the entire transaction.
+        """
+        # Arrange
+        service = MetricGenerationService(db=db_session, redis=None)
+        category_name = "Тестовая категория"
+
+        # Create the category first time
+        category1 = await service.get_or_create_category(category_name)
+        await db_session.commit()
+
+        # Act: Try to create the same category again (simulates concurrent request)
+        # This should NOT raise IntegrityError, should return existing
+        category2 = await service.get_or_create_category(category_name)
+
+        # Assert
+        assert category2 is not None
+        assert category2.id == category1.id
+        assert category2.name == category_name
+
+    async def test_session_usable_after_category_integrity_error(self, db_session: AsyncSession):
+        """
+        Test that session remains usable after handling IntegrityError.
+
+        After a handled IntegrityError, subsequent queries should succeed
+        without InFailedSQLTransactionError.
+        """
+        # Arrange
+        service = MetricGenerationService(db=db_session, redis=None)
+
+        # Create a category first
+        category = await service.get_or_create_category("Первая категория")
+        await db_session.commit()
+
+        # Try to create duplicate (should be handled)
+        await service.get_or_create_category("Первая категория")
+
+        # Act: Session should still be usable for other queries
+        existing_categories = await service.get_existing_categories()
+
+        # Assert
+        assert len(existing_categories) >= 1
+        assert any(c["name"] == "Первая категория" for c in existing_categories)
+
+    async def test_get_or_create_category_uses_savepoint(self, db_session: AsyncSession):
+        """
+        Test that get_or_create_category uses savepoint pattern.
+
+        Verifies that the implementation uses begin_nested() to create
+        a savepoint that can be rolled back without affecting the outer transaction.
+        """
+        import inspect
+        from app.services.metric_generation import MetricGenerationService
+
+        # Check source code contains begin_nested pattern
+        source = inspect.getsource(MetricGenerationService.get_or_create_category)
+
+        assert 'begin_nested' in source, (
+            "get_or_create_category should use begin_nested() for savepoint pattern"
+        )
