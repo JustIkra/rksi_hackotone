@@ -87,3 +87,53 @@ class TestGetOrCreateCategoryTransaction:
         assert 'begin_nested' in source, (
             "get_or_create_category should use begin_nested() for savepoint pattern"
         )
+
+
+@pytest.mark.asyncio
+class TestCreatePendingMetricTransaction:
+    """Test transaction handling in create_pending_metric."""
+
+    async def test_create_pending_metric_uses_savepoint(self, db_session: AsyncSession):
+        """
+        Test that create_pending_metric uses savepoint pattern.
+        """
+        import inspect
+        from app.services.metric_generation import MetricGenerationService
+
+        source = inspect.getsource(MetricGenerationService.create_pending_metric)
+
+        assert 'begin_nested' in source, (
+            "create_pending_metric should use begin_nested() for savepoint pattern"
+        )
+
+    async def test_session_usable_after_metric_creation(self, db_session: AsyncSession):
+        """
+        Test that session remains usable after metric creation.
+        """
+        from app.schemas.metric_generation import ExtractedMetricData
+        from sqlalchemy import select
+        from app.db.models import MetricDef
+
+        service = MetricGenerationService(db=db_session, redis=None)
+
+        # Create a metric
+        metric_data = ExtractedMetricData(
+            name="Тестовая метрика",
+            description="Описание",
+            value=5.0,
+            category="Тестовая категория",
+            synonyms=[],
+            rationale=None,
+        )
+
+        metric1 = await service.create_pending_metric(metric_data)
+        await db_session.commit()
+
+        # Session should still be usable - query the metric directly
+        result = await db_session.execute(
+            select(MetricDef).where(MetricDef.id == metric1.id)
+        )
+        fetched = result.scalars().first()
+
+        assert fetched is not None
+        assert fetched.name == "Тестовая метрика"

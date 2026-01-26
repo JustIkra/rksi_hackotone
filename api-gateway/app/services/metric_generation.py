@@ -677,7 +677,13 @@ class MetricGenerationService:
         self,
         metric_data: ExtractedMetricData,
     ) -> MetricDef:
-        """Create a new metric in PENDING moderation status."""
+        """
+        Create a new metric in PENDING moderation status.
+
+        Uses savepoint pattern to handle potential constraint violations gracefully.
+        """
+        from sqlalchemy.exc import IntegrityError
+
         code = self._generate_metric_code(metric_data.name)
 
         # Get or create category
@@ -709,22 +715,30 @@ class MetricGenerationService:
             moderation_status="PENDING",
             ai_rationale=rationale_json,
         )
-        self.db.add(metric)
-        await self.db.flush()
 
-        # Add suggested synonyms
-        for synonym in metric_data.synonyms[:5]:  # Limit synonyms
-            # Check if synonym already exists
-            existing = await self.db.execute(
-                select(MetricSynonym).where(MetricSynonym.synonym == synonym)
-            )
-            if not existing.scalars().first():
-                self.db.add(MetricSynonym(
-                    metric_def_id=metric.id,
-                    synonym=synonym,
-                ))
+        try:
+            async with self.db.begin_nested():
+                self.db.add(metric)
+                await self.db.flush()
 
-        return metric
+                # Add suggested synonyms
+                for synonym in metric_data.synonyms[:5]:
+                    # Check if synonym already exists
+                    existing = await self.db.execute(
+                        select(MetricSynonym).where(MetricSynonym.synonym == synonym)
+                    )
+                    if not existing.scalars().first():
+                        self.db.add(MetricSynonym(
+                            metric_def_id=metric.id,
+                            synonym=synonym,
+                        ))
+
+                await self.db.flush()
+            return metric
+        except IntegrityError as e:
+            logger.warning(f"IntegrityError creating metric '{metric_data.name}': {e}")
+            await self.db.rollback()
+            raise
 
     async def match_existing_metric(
         self,
