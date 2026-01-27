@@ -319,6 +319,62 @@ class MetricGenerationService:
             for c in categories
         ]
 
+    # ==================== Validation ====================
+
+    def _is_valid_metric_value(self, value: Any) -> bool:
+        """
+        Check if metric has a valid numeric value (1-10).
+
+        Metrics without numeric values are likely recommendations
+        or textual observations, not actual scored metrics.
+        """
+        if value is None:
+            return False
+        try:
+            num = float(value)
+            return 1.0 <= num <= 10.0
+        except (ValueError, TypeError):
+            return False
+
+    def _filter_metrics_with_values(
+        self,
+        metrics: list[ExtractedMetricData],
+        source: str = "extraction",
+    ) -> list[ExtractedMetricData]:
+        """
+        Filter metrics to keep only those with valid numeric values.
+
+        This prevents recommendations and textual observations from
+        being saved as metrics. Logs filtered items for debugging.
+
+        Args:
+            metrics: List of extracted metrics
+            source: Source identifier for logging (extraction/review)
+
+        Returns:
+            Filtered list containing only metrics with valid values
+        """
+        valid_metrics = []
+        filtered_count = 0
+
+        for m in metrics:
+            if self._is_valid_metric_value(m.value):
+                valid_metrics.append(m)
+            else:
+                filtered_count += 1
+                logger.info(
+                    f"Filtered metric without value ({source}): '{m.name}' "
+                    f"(value={m.value}) - likely a recommendation, not a metric"
+                )
+
+        if filtered_count > 0:
+            logger.info(
+                f"Filtered {filtered_count} metrics without numeric values "
+                f"from {source} pass (kept {len(valid_metrics)})"
+            )
+
+        return valid_metrics
+
     # ==================== AI Extraction ====================
 
     def _build_extraction_prompt(
@@ -493,7 +549,8 @@ class MetricGenerationService:
                 logger.warning(f"Failed to parse metric: {e}, data: {m}")
                 continue
 
-        return metrics
+        # Filter out metrics without numeric values (likely recommendations)
+        return self._filter_metrics_with_values(metrics, source="extraction")
 
     async def review_extracted_metrics(
         self,
@@ -574,13 +631,19 @@ class MetricGenerationService:
         if isinstance(parsed, dict):
             removed_duplicates = parsed.get("removed_duplicates", 0)
             corrections_made = parsed.get("corrections_made", 0)
+            removed_recommendations = parsed.get("removed_recommendations", 0)
         else:
             removed_duplicates = 0
             corrections_made = 0
+            removed_recommendations = 0
+
+        # Filter out metrics without numeric values (safety net)
+        filtered_metrics = self._filter_metrics_with_values(reviewed_metrics, source="review")
+        code_filtered = len(reviewed_metrics) - len(filtered_metrics)
 
         return AIReviewResult(
-            metrics=reviewed_metrics,
-            removed_duplicates=removed_duplicates,
+            metrics=filtered_metrics,
+            removed_duplicates=removed_duplicates + code_filtered + removed_recommendations,
             corrections_made=corrections_made,
         )
 
