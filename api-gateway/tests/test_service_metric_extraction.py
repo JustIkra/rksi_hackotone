@@ -223,26 +223,21 @@ class TestMetricKeyParsingActualCode:
 
     def test_extraction_parser_supports_title_key(self):
         """
-        Verify extraction parser (line 464) supports 'title' key.
-
-        This test will FAIL until 'title' is added to metric_generation.py:464
+        Verify PDF extraction parser supports 'title' key.
         """
         import inspect
         from app.services.metric_generation import MetricGenerationService
 
-        # Get the source code of extract_metrics_from_image method
-        source = inspect.getsource(MetricGenerationService.extract_metrics_from_image)
+        # Get the source code of extract_metrics_from_pdf method
+        source = inspect.getsource(MetricGenerationService.extract_metrics_from_pdf)
 
         # Check that 'title' is in the name parsing logic
-        # The line should be: name = m.get("name") or m.get("metric_name") or m.get("название") or m.get("title")
         assert 'get("title")' in source or "get('title')" in source, \
-            "extraction parser does not support 'title' key - add it to line 464"
+            "PDF extraction parser does not support 'title' key"
 
     def test_review_parser_supports_title_key(self):
         """
-        Verify review parser (line 541) supports 'title' key.
-
-        This test will FAIL until 'title' is added to metric_generation.py:541
+        Verify review parser supports 'title' key.
         """
         import inspect
         from app.services.metric_generation import MetricGenerationService

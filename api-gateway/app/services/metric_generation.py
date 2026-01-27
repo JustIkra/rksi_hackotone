@@ -2,8 +2,8 @@
 Service for AI-powered metric generation from PDF/DOCX reports.
 
 Handles:
-- PDF/DOCX file processing and conversion to images
-- AI extraction using OpenRouter Vision API
+- PDF/DOCX file processing (DOCX converted to PDF via LibreOffice)
+- AI extraction using OpenRouter PDF Inputs API
 - Multi-pass generation (extraction + review)
 - Deduplication and matching with existing metrics
 - Progress tracking via Redis
@@ -12,7 +12,6 @@ Handles:
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import logging
 import re
@@ -20,8 +19,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import fitz  # PyMuPDF
-from PIL import Image
 from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,8 +44,7 @@ _PROMPTS_CANDIDATES = [
     Path(__file__).parent.parent.parent.parent / "config" / "prompts" / "metric-extraction.json",  # Local: ../config/...
 ]
 PROMPTS_PATH = next((p for p in _PROMPTS_CANDIDATES if p.exists()), _PROMPTS_CANDIDATES[0])
-MAX_IMAGE_SIZE = 4 * 1024 * 1024  # 4MB per image
-DPI = 150  # Resolution for PDF rendering
+MAX_PDF_SIZE = 10 * 1024 * 1024  # 10MB limit for OpenRouter PDF inputs
 
 
 class MetricGenerationService:
@@ -147,7 +143,7 @@ class MetricGenerationService:
 
     def convert_docx_to_pdf(self, docx_data: bytes) -> bytes:
         """
-        Convert DOCX to PDF using pypandoc (requires pandoc installed).
+        Convert DOCX to PDF using LibreOffice headless mode.
 
         Args:
             docx_data: DOCX file content bytes
@@ -156,125 +152,67 @@ class MetricGenerationService:
             PDF file content bytes
 
         Raises:
-            RuntimeError: If pandoc is not installed or conversion fails
+            RuntimeError: If LibreOffice is not installed or conversion fails
         """
         import shutil
+        import subprocess
         import tempfile
 
-        # Check if pandoc is available
-        if not shutil.which("pandoc"):
-            logger.warning("Pandoc not installed, attempting to use pypandoc auto-download")
+        # Check if LibreOffice is available
+        libreoffice_cmd = shutil.which("libreoffice") or shutil.which("soffice")
+        if not libreoffice_cmd:
+            raise RuntimeError(
+                "LibreOffice not installed. Install with: "
+                "apt-get install libreoffice-writer (Linux) or "
+                "brew install --cask libreoffice (macOS)"
+            )
 
         try:
-            import pypandoc
+            with tempfile.TemporaryDirectory() as tmpdir:
+                docx_path = Path(tmpdir) / "input.docx"
+                docx_path.write_bytes(docx_data)
 
-            # Create temp files for input/output
-            with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as docx_file:
-                docx_file.write(docx_data)
-                docx_path = docx_file.name
-
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as pdf_file:
-                pdf_path = pdf_file.name
-
-            try:
-                # Convert DOCX to PDF
-                pypandoc.convert_file(
-                    docx_path,
-                    "pdf",
-                    outputfile=pdf_path,
-                    extra_args=["--pdf-engine=pdflatex"]
+                # Convert DOCX to PDF using LibreOffice headless
+                result = subprocess.run(
+                    [
+                        libreoffice_cmd,
+                        "--headless",
+                        "--convert-to", "pdf",
+                        "--outdir", tmpdir,
+                        str(docx_path),
+                    ],
+                    capture_output=True,
+                    timeout=120,
+                    check=False,
                 )
 
-                # Read resulting PDF
-                with open(pdf_path, "rb") as f:
-                    pdf_data = f.read()
+                if result.returncode != 0:
+                    stderr = result.stderr.decode("utf-8", errors="replace")
+                    raise RuntimeError(f"LibreOffice conversion failed: {stderr}")
 
+                # Read resulting PDF
+                pdf_path = Path(tmpdir) / "input.pdf"
+                if not pdf_path.exists():
+                    raise RuntimeError(
+                        "LibreOffice conversion produced no output file. "
+                        f"stdout: {result.stdout.decode('utf-8', errors='replace')}"
+                    )
+
+                pdf_data = pdf_path.read_bytes()
                 if not pdf_data:
                     raise RuntimeError("Conversion produced empty PDF")
 
                 return pdf_data
 
-            finally:
-                # Cleanup temp files
-                import os
-                try:
-                    os.unlink(docx_path)
-                    os.unlink(pdf_path)
-                except OSError:
-                    pass
-
-        except ImportError:
+        except subprocess.TimeoutExpired:
             raise RuntimeError(
-                "pypandoc not installed. Run: pip install pypandoc"
+                "DOCX to PDF conversion timed out (120s). File may be too large."
             )
         except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
             logger.exception(f"DOCX→PDF conversion failed: {e}")
-            raise RuntimeError(
-                f"DOCX to PDF conversion failed: {e}. "
-                "Ensure pandoc and pdflatex are installed."
-            )
-
-    def pdf_to_images(self, pdf_data: bytes) -> list[tuple[bytes, int]]:
-        """
-        Convert PDF pages to images.
-
-        Returns:
-            List of (image_bytes, page_number) tuples
-        """
-        images: list[tuple[bytes, int]] = []
-
-        with fitz.open(stream=pdf_data, filetype="pdf") as doc:
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-
-                # Render page to image
-                mat = fitz.Matrix(DPI / 72, DPI / 72)
-                pix = page.get_pixmap(matrix=mat)
-
-                # Convert to PNG bytes
-                img_data = pix.tobytes("png")
-
-                # Resize if too large
-                if len(img_data) > MAX_IMAGE_SIZE:
-                    img = Image.open(io.BytesIO(img_data))
-                    # Reduce size by 50%
-                    new_size = (img.width // 2, img.height // 2)
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
-
-                    buffer = io.BytesIO()
-                    img.save(buffer, format="PNG", optimize=True)
-                    img_data = buffer.getvalue()
-
-                images.append((img_data, page_num + 1))
-
-        return images
-
-    def smart_chunk_images(
-        self, images: list[tuple[bytes, int]], max_pages_per_chunk: int = 5
-    ) -> list[list[tuple[bytes, int]]]:
-        """
-        Split images into chunks for processing.
-
-        Args:
-            images: List of (image_bytes, page_number) tuples
-            max_pages_per_chunk: Maximum pages per AI call
-
-        Returns:
-            List of chunks, each containing up to max_pages_per_chunk images
-        """
-        chunks: list[list[tuple[bytes, int]]] = []
-        current_chunk: list[tuple[bytes, int]] = []
-
-        for img in images:
-            current_chunk.append(img)
-            if len(current_chunk) >= max_pages_per_chunk:
-                chunks.append(current_chunk)
-                current_chunk = []
-
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        return chunks
+            raise RuntimeError(f"DOCX to PDF conversion failed: {e}")
 
     # ==================== Context Loading ====================
 
@@ -467,73 +405,90 @@ class MetricGenerationService:
             logger.error(f"Invalid AI response structure: {e}")
             return {"metrics": [], "error": str(e)}
 
-    async def extract_metrics_from_image(
+    async def extract_metrics_from_pdf(
         self,
-        image_data: bytes,
-        page_number: int,
+        pdf_data: bytes,
         existing_metrics: list[dict[str, Any]],
         existing_synonyms: list[dict[str, str]],
         existing_categories: list[dict[str, str]],
     ) -> list[ExtractedMetricData]:
         """
-        Extract metrics from a single page image.
+        Extract metrics from entire PDF document using OpenRouter PDF Inputs.
+
+        Sends the complete PDF to the LLM for analysis, allowing it to see
+        the full document context including charts and graphs.
 
         Args:
-            image_data: PNG image bytes
-            page_number: Page number for context
-            existing_*: Context about existing data
+            pdf_data: PDF file bytes
+            existing_*: Context about existing data for matching
 
         Returns:
-            List of extracted metrics
+            List of extracted metrics with numeric values
         """
-        prompt = self._build_extraction_prompt(
-            existing_metrics, existing_synonyms, existing_categories
+        # Use PDF-specific prompt if available
+        template = self.prompts.get("extraction_prompt_pdf") or self.prompts.get("extraction_prompt", "Extract metrics as JSON.")
+
+        metrics_str = "\n".join(
+            f"- {m['name']} ({m['code']}): {m.get('description', '')}"
+            for m in existing_metrics[:50]
         )
 
-        # Add page context
-        prompt = f"Страница {page_number}.\n\n{prompt}"
+        synonyms_str = "\n".join(
+            f"- {s['synonym']} → {s['metric_code']}"
+            for s in existing_synonyms[:100]
+        )
 
-        response = await self._client.generate_from_image(
+        categories_str = "\n".join(
+            f"- {c['name']} ({c['code']})"
+            for c in existing_categories
+        )
+
+        prompt = (
+            template
+            .replace("{existing_metrics}", metrics_str or "Нет существующих метрик")
+            .replace("{existing_synonyms}", synonyms_str or "Нет синонимов")
+            .replace("{existing_categories}", categories_str or "Нет категорий")
+        )
+
+        response = await self._client.generate_from_pdf(
             prompt=prompt,
-            image_data=image_data,
-            mime_type="image/png",
+            pdf_data=pdf_data,
+            system_instructions=self.prompts.get("system_prompt"),
             response_mime_type="application/json",
-            timeout=120,
+            timeout=180,
         )
 
         parsed = self._parse_ai_response(response)
         metrics: list[ExtractedMetricData] = []
 
-        # Handle case where AI returns a list directly instead of {"metrics": [...]}
+        logger.info(f"PDF extraction AI response: {json.dumps(parsed, ensure_ascii=False, default=str)[:2000]}")
+
         if isinstance(parsed, list):
             metrics_list = parsed
         elif isinstance(parsed, dict):
             metrics_list = parsed.get("metrics", [])
         else:
-            logger.warning(f"Unexpected AI response type: {type(parsed).__name__}, value: {str(parsed)[:200]}")
+            logger.warning(f"Unexpected PDF AI response type: {type(parsed).__name__}")
             metrics_list = []
+
+        logger.info(f"PDF extraction: Found {len(metrics_list)} metrics in AI response")
 
         for m in metrics_list:
             try:
-                # Skip non-dict items
                 if not isinstance(m, dict):
-                    logger.warning(f"Skipping non-dict metric item: {type(m).__name__}")
                     continue
 
-                # Handle alternative key names from AI responses
                 name = m.get("name") or m.get("metric_name") or m.get("название") or m.get("title")
                 if not name:
-                    logger.warning(f"Skipping metric without name: {m}")
                     continue
 
-                # Handle alternative value keys
                 value = m.get("value") or m.get("metric_value") or m.get("значение")
 
                 rationale = None
                 if m.get("rationale") and isinstance(m.get("rationale"), dict):
                     rationale = AIRationale(
                         quotes=m["rationale"].get("quotes", []),
-                        page_numbers=m["rationale"].get("page_numbers", [page_number]),
+                        page_numbers=m["rationale"].get("page_numbers", []),
                         confidence=m["rationale"].get("confidence", 0.5),
                     )
 
@@ -546,11 +501,13 @@ class MetricGenerationService:
                     rationale=rationale,
                 ))
             except (KeyError, ValueError, TypeError) as e:
-                logger.warning(f"Failed to parse metric: {e}, data: {m}")
+                logger.warning(f"Failed to parse PDF metric: {e}, data: {m}")
                 continue
 
-        # Filter out metrics without numeric values (likely recommendations)
-        return self._filter_metrics_with_values(metrics, source="extraction")
+        filtered = self._filter_metrics_with_values(metrics, source="pdf_extraction")
+        logger.info(f"PDF extraction: After filtering: {len(filtered)} metrics")
+
+        return filtered
 
     async def review_extracted_metrics(
         self,
@@ -1046,10 +1003,10 @@ class MetricGenerationService:
         }
 
         try:
-            # Step 1: Convert to images
+            # Step 1: Convert DOCX to PDF if needed
             await self.update_progress(
                 task_id, TaskStatus.PROCESSING, 5,
-                current_step="Конвертация документа в изображения..."
+                current_step="Подготовка документа..."
             )
 
             # Convert DOCX to PDF if needed
@@ -1070,43 +1027,37 @@ class MetricGenerationService:
                     )
                     return result
 
-            images = self.pdf_to_images(pdf_data)
-            total_pages = len(images)
-
-            await self.update_progress(
-                task_id, TaskStatus.PROCESSING, 10,
-                current_step=f"Найдено {total_pages} страниц",
-                total_pages=total_pages,
-            )
+            # Validate PDF size
+            if len(pdf_data) > MAX_PDF_SIZE:
+                error_msg = f"PDF слишком большой: {len(pdf_data) / 1024 / 1024:.1f}MB (макс: 10MB)"
+                result["errors"].append(error_msg)
+                await self.update_progress(
+                    task_id, TaskStatus.FAILED, 0,
+                    error=error_msg
+                )
+                return result
 
             # Step 2: Load context
             existing_metrics = await self.get_existing_metrics()
             existing_synonyms = await self.get_existing_synonyms()
             existing_categories = await self.get_existing_categories()
 
-            # Step 3: Extract metrics from each page
-            all_extracted: list[ExtractedMetricData] = []
-            chunks = self.smart_chunk_images(images)
+            # Step 3: Extract metrics from PDF directly
+            await self.update_progress(
+                task_id, TaskStatus.PROCESSING, 20,
+                current_step="Анализ PDF документа..."
+            )
 
-            for chunk_idx, chunk in enumerate(chunks):
-                for img_data, page_num in chunk:
-                    progress = 10 + int((page_num / total_pages) * 60)
-                    await self.update_progress(
-                        task_id, TaskStatus.PROCESSING, progress,
-                        current_step=f"Обработка страницы {page_num}/{total_pages}",
-                        processed_pages=page_num,
-                        total_pages=total_pages,
-                    )
+            all_extracted = await self.extract_metrics_from_pdf(
+                pdf_data,
+                existing_metrics, existing_synonyms, existing_categories,
+            )
 
-                    try:
-                        page_metrics = await self.extract_metrics_from_image(
-                            img_data, page_num,
-                            existing_metrics, existing_synonyms, existing_categories,
-                        )
-                        all_extracted.extend(page_metrics)
-                    except Exception as e:
-                        logger.warning(f"Failed to process page {page_num}: {e}")
-                        result["warnings"].append(f"Ошибка на странице {page_num}: {str(e)}")
+            await self.update_progress(
+                task_id, TaskStatus.PROCESSING, 70,
+                current_step=f"Найдено {len(all_extracted)} метрик",
+                metrics_found=len(all_extracted),
+            )
 
             await self.update_progress(
                 task_id, TaskStatus.PROCESSING, 75,

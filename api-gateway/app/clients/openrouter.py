@@ -403,6 +403,79 @@ class OpenRouterClient:
 
         return await self._request_with_retry(payload, timeout)
 
+    async def generate_from_pdf(
+        self,
+        prompt: str,
+        pdf_data: bytes,
+        system_instructions: str | None = None,
+        response_mime_type: str = "text/plain",
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """
+        Generate text from PDF document using OpenRouter PDF Inputs.
+
+        Uses OpenRouter's file-parser plugin for native PDF processing.
+        The entire PDF is sent as a base64-encoded file attachment.
+
+        Args:
+            prompt: Text prompt describing what to extract
+            pdf_data: Raw PDF bytes
+            system_instructions: Optional system message
+            response_mime_type: "text/plain" or "application/json"
+            timeout: Request timeout override
+
+        Returns:
+            Raw API response with choices[0].message.content
+        """
+        # Encode PDF to base64 data URL
+        pdf_b64 = base64.standard_b64encode(pdf_data).decode("utf-8")
+        data_url = f"data:application/pdf;base64,{pdf_b64}"
+
+        messages = []
+
+        if system_instructions:
+            messages.append({
+                "role": "system",
+                "content": system_instructions,
+            })
+
+        # PDF as file attachment in multipart content
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "document.pdf",
+                        "file_data": data_url,
+                    },
+                },
+            ],
+        })
+
+        payload: dict[str, Any] = {
+            "model": self.model_vision,  # Use vision model for multimodal
+            "messages": messages,
+            "temperature": 0.1,  # Low temperature for consistent extraction
+            "max_tokens": 8192,
+        }
+
+        if response_mime_type == "application/json":
+            payload["response_format"] = {"type": "json_object"}
+
+        logger.debug(
+            "openrouter_generate_from_pdf",
+            extra={
+                "model": self.model_vision,
+                "prompt_length": len(prompt),
+                "pdf_size": len(pdf_data),
+                "has_system": system_instructions is not None,
+            },
+        )
+
+        return await self._request_with_retry(payload, timeout)
+
     async def create_embedding(
         self,
         input_text: str | list[str],
