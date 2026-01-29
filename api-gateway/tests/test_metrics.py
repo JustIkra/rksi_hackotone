@@ -336,16 +336,16 @@ async def test_update_metric_def_not_found(client: AsyncClient, admin_user: User
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires metric_embedding table (pgvector extension) which may not exist in test DB")
 async def test_delete_metric_def(
     client: AsyncClient,
     admin_user: User,
     db_session: AsyncSession,
+    skip_if_no_pgvector,
 ):
     """Test deleting a metric definition. Requires ADMIN.
 
-    Note: Skipped by default because MetricDef has cascade relationship to
-    metric_embedding table which requires pgvector extension.
+    Note: Dynamically skipped if pgvector extension not available
+    (MetricDef has cascade relationship to metric_embedding table).
     """
     # Create a metric def to delete
     metric_def = MetricDef(

@@ -72,6 +72,14 @@
     />
 
     <el-alert
+      v-if="props.reportExtractWarning && props.reportStatus === 'EXTRACTED'"
+      type="warning"
+      :title="props.reportExtractWarning"
+      :closable="false"
+      style="margin-bottom: 16px;"
+    />
+
+    <el-alert
       v-if="!metrics || metrics.length === 0"
       type="info"
       :closable="false"
@@ -179,116 +187,6 @@
           </div>
         </div>
       </el-tab-pane>
-
-      <el-tab-pane
-        label="Изображения отчёта"
-        name="images"
-      >
-        <div
-          v-if="loadingImages"
-          class="loading-container"
-        >
-          <el-icon class="is-loading">
-            <Loading />
-          </el-icon>
-          <span style="margin-left: 8px;">Загрузка изображений...</span>
-        </div>
-
-        <div
-          v-else-if="images.length === 0"
-          class="no-images"
-        >
-          <el-empty description="Изображения отсутствуют">
-            <template #image>
-              <el-icon
-                :size="60"
-                color="var(--el-color-info)"
-              >
-                <Picture />
-              </el-icon>
-            </template>
-          </el-empty>
-        </div>
-
-        <div
-          v-else
-          class="images-container"
-        >
-          <div class="image-controls">
-            <el-button-group>
-              <el-button
-                :disabled="zoomLevel <= 0.5"
-                @click="zoomOut"
-              >
-                <el-icon><ZoomOut /></el-icon>
-              </el-button>
-              <el-button @click="zoomReset">
-                {{ Math.round(zoomLevel * 100) }}%
-              </el-button>
-              <el-button
-                :disabled="zoomLevel >= 2"
-                @click="zoomIn"
-              >
-                <el-icon><ZoomIn /></el-icon>
-              </el-button>
-            </el-button-group>
-            <el-button
-              style="margin-left: 12px;"
-              @click="toggleFullscreen"
-            >
-              <el-icon><FullScreen /></el-icon>
-              Полноэкранный режим
-            </el-button>
-          </div>
-
-          <div
-            ref="carouselContainer"
-            class="carousel-wrapper"
-            :class="{ 'fullscreen': isFullscreen }"
-          >
-            <el-carousel
-              :height="carouselHeight + 'px'"
-              arrow="always"
-              indicator-position="outside"
-            >
-              <el-carousel-item
-                v-for="image in images"
-                :key="image.id"
-              >
-                <div class="image-slide">
-                  <div
-                    class="image-wrapper"
-                    :style="{ transform: `scale(${zoomLevel})` }"
-                  >
-                    <img
-                      :src="image.data_url"
-                      :alt="image.filename"
-                      class="report-image"
-                    >
-                  </div>
-                  <div class="image-info">
-                    <span class="image-filename">{{ image.filename }}</span>
-                    <span
-                      v-if="image.page_number"
-                      class="image-page"
-                    >
-                      Страница {{ image.page_number }}
-                    </span>
-                  </div>
-                </div>
-              </el-carousel-item>
-            </el-carousel>
-            <el-button
-              v-if="isFullscreen"
-              class="exit-fullscreen"
-              circle
-              @click="toggleFullscreen"
-            >
-              <el-icon><Close /></el-icon>
-            </el-button>
-          </div>
-        </div>
-      </el-tab-pane>
     </el-tabs>
   </el-card>
 </template>
@@ -297,16 +195,11 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  ZoomIn,
-  ZoomOut,
-  FullScreen,
   Loading,
-  Picture,
-  Close,
   Refresh
 } from '@element-plus/icons-vue'
 import MetricInput from './MetricInput.vue'
-import { metricsApi, reportsApi } from '@/api'
+import { metricsApi } from '@/api'
 import { parseNumber, formatForApi } from '@/utils/numberFormat'
 import { formatMetricLabel } from '@/utils/metricNames'
 import { formatDateLong } from '@/utils/dateFormat'
@@ -317,6 +210,10 @@ const props = defineProps({
     required: true
   },
   reportStatus: {
+    type: String,
+    default: null
+  },
+  reportExtractWarning: {
     type: String,
     default: null
   }
@@ -340,14 +237,8 @@ const metrics = ref([])
 const formData = ref({ metrics: {} })
 const originalData = ref({})
 
-// Images state
+// Tab state
 const activeTab = ref('metrics')
-const images = ref([])
-const loadingImages = ref(false)
-const zoomLevel = ref(1)
-const isFullscreen = ref(false)
-const carouselContainer = ref(null)
-const carouselHeight = ref(500)
 
 // Polling state
 const pollingInterval = ref(null)
@@ -603,46 +494,6 @@ const getSourceLabel = (source) => {
 // Используем formatDateLong для развернутого формата даты
 const formatDate = formatDateLong
 
-// Images methods
-const loadReportImages = async () => {
-  loadingImages.value = true
-  error.value = null
-  try {
-    images.value = await reportsApi.getReportImages(props.reportId)
-  } catch (err) {
-    console.error('Failed to load report images:', err)
-    error.value = 'Не удалось загрузить изображения отчёта'
-    ElMessage.error('Не удалось загрузить изображения отчёта')
-  } finally {
-    loadingImages.value = false
-  }
-}
-
-const zoomIn = () => {
-  if (zoomLevel.value < 2) {
-    zoomLevel.value = Math.min(2, zoomLevel.value + 0.25)
-  }
-}
-
-const zoomOut = () => {
-  if (zoomLevel.value > 0.5) {
-    zoomLevel.value = Math.max(0.5, zoomLevel.value - 0.25)
-  }
-}
-
-const zoomReset = () => {
-  zoomLevel.value = 1
-}
-
-const toggleFullscreen = () => {
-  isFullscreen.value = !isFullscreen.value
-  if (isFullscreen.value) {
-    carouselHeight.value = window.innerHeight - 100
-  } else {
-    carouselHeight.value = 500
-  }
-}
-
 // Lifecycle
 onMounted(async () => {
   // loadMetrics() вызывается через watch на reportStatus
@@ -657,8 +508,6 @@ onUnmounted(() => {
 watch(() => props.reportId, async (newId) => {
   if (newId) {
     await loadMetrics()
-    // Reset images when report changes
-    images.value = []
   }
 })
 
@@ -684,13 +533,6 @@ watch(() => props.reportStatus, async (newStatus, oldStatus) => {
     }
   }
 }, { immediate: true })
-
-// Watch для загрузки изображений при переключении на вкладку
-watch(activeTab, async (newTab) => {
-  if (newTab === 'images' && images.value.length === 0 && !loadingImages.value) {
-    await loadReportImages()
-  }
-})
 </script>
 
 <style scoped>
@@ -765,106 +607,5 @@ watch(activeTab, async (newTab) => {
   font-weight: 500;
   color: var(--el-text-color-secondary);
   margin-right: 8px;
-}
-
-/* Images tab styles */
-.loading-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  color: var(--el-text-color-secondary);
-}
-
-.no-images {
-  padding: 20px;
-}
-
-.images-container {
-  padding-top: 12px;
-}
-
-.image-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.carousel-wrapper {
-  position: relative;
-  transition: all 0.3s ease;
-}
-
-.carousel-wrapper.fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
-  background: rgba(0, 0, 0, 0.95);
-  padding: 20px;
-}
-
-.image-slide {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.image-wrapper {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-  transition: transform 0.3s ease;
-}
-
-.report-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.image-info {
-  display: flex;
-  gap: 16px;
-  padding: 12px;
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
-  margin-top: 12px;
-}
-
-.image-filename {
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-}
-
-.image-page {
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-}
-
-.exit-fullscreen {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 10000;
-}
-
-.fullscreen .image-info {
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-}
-
-.fullscreen .image-filename,
-.fullscreen .image-page {
-  color: white;
 }
 </style>

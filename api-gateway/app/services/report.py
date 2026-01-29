@@ -208,44 +208,6 @@ class ReportService:
                 return True
         return False
 
-    async def get_report_images(self, report_id: uuid.UUID) -> list[dict]:
-        """
-        Get all images for a report with base64-encoded data.
-
-        Returns list of dicts with:
-        - id: UUID of the ReportImage
-        - filename: Image filename
-        - data_url: Base64-encoded data URL (data:image/png;base64,...)
-        - page_number: Page number (optional)
-        """
-        import base64
-
-        await self.get_report_by_id(report_id)
-
-        image_repo = ReportImageRepository(self.db)
-        images = await image_repo.get_by_report(report_id)
-
-        result = []
-        for img in images:
-            if img.file_ref and img.file_ref.storage == "LOCAL":
-                image_path = self.storage.resolve_path(img.file_ref.key)
-
-                if image_path.exists():
-                    image_data = image_path.read_bytes()
-                    base64_data = base64.b64encode(image_data).decode('utf-8')
-
-                    # Extract filename from key or use default
-                    filename = img.file_ref.filename or f"image_{img.order_index}.png"
-
-                    result.append({
-                        "id": img.id,
-                        "filename": filename,
-                        "data_url": f"data:{img.file_ref.mime};base64,{base64_data}",
-                        "page_number": img.page if img.page > 0 else None,
-                    })
-
-        return result
-
     async def delete_report(self, report_id: uuid.UUID) -> None:
         """
         Delete report and all related entities and files.

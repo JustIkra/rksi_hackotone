@@ -76,14 +76,5 @@ export const reportsApi = {
   async getList(participantId) {
     const response = await apiClient.get(`/participants/${participantId}/reports`)
     return response.data
-  },
-
-  /**
-   * Get images from a report
-   * @param {string} reportId - UUID
-   */
-  async getReportImages(reportId) {
-    const response = await apiClient.get(`/reports/${reportId}/images`)
-    return response.data
   }
 }

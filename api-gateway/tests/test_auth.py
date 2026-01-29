@@ -191,7 +191,7 @@ async def test_login_success(client: AsyncClient, active_user: User):
     """Test successful login sets cookie and returns user info."""
     # Arrange
     request_data = {
-        "email": "user@test.com",
+        "email": active_user.email,
         "password": "UserPass123",
     }
 
@@ -256,7 +256,7 @@ async def test_login_pending_user(client: AsyncClient, pending_user: User):
     """Test login fails for users with PENDING status."""
     # Arrange
     request_data = {
-        "email": "pending@test.com",
+        "email": pending_user.email,
         "password": "PendingPass123",
     }
 
@@ -304,7 +304,7 @@ async def test_login_cookie_attributes(client: AsyncClient, active_user: User):
     """Test login cookie has correct security attributes."""
     # Arrange
     request_data = {
-        "email": "user@test.com",
+        "email": active_user.email,
         "password": "UserPass123",
     }
 
@@ -840,7 +840,7 @@ async def test_concurrent_logins_same_user(client: AsyncClient, active_user: Use
     """Test multiple concurrent logins for same user are allowed."""
     # Arrange
     request_data = {
-        "email": "user@test.com",
+        "email": active_user.email,
         "password": "UserPass123",
     }
 

@@ -89,7 +89,9 @@
           >
             <template #default="{ row }">
               <div v-if="row.user">
-                <div class="user-name">{{ row.user.full_name || row.user.email }}</div>
+                <div class="user-name">
+                  {{ row.user.full_name || row.user.email }}
+                </div>
                 <div
                   v-if="row.user.full_name"
                   class="user-email"

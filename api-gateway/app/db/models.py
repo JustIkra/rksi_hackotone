@@ -172,6 +172,8 @@ class Report(Base):
     )
     extracted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     extract_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extract_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extract_warning_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     participant: Mapped["Participant"] = relationship("Participant", back_populates="reports")

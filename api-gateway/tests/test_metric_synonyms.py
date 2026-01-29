@@ -567,17 +567,17 @@ class TestMetricSynonymCascadeDelete:
 
     @pytest.mark.integration
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Requires metric_embedding table (pgvector extension) which may not exist in test DB")
     async def test_cascade_delete_with_metric_def(
         self,
         client: AsyncClient,
         admin_user: User,
         db_session: AsyncSession,
+        skip_if_no_pgvector,
     ):
         """Synonyms are deleted when parent metric_def is deleted.
 
-        Note: Skipped because MetricDef delete triggers cascade to
-        metric_embedding table which requires pgvector extension.
+        Note: Dynamically skipped if pgvector extension not available
+        (MetricDef delete triggers cascade to metric_embedding table).
         """
         headers = get_auth_header(admin_user)
 

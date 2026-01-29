@@ -23,7 +23,9 @@
           :on-remove="handleFileRemove"
           accept=".pdf,.docx"
         >
-          <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+          <el-icon class="el-icon--upload">
+            <upload-filled />
+          </el-icon>
           <div class="el-upload__text">
             Перетащите файл сюда или <em>нажмите для выбора</em>
           </div>
@@ -34,7 +36,10 @@
           </template>
         </el-upload>
 
-        <div v-if="selectedFile" class="upload-actions">
+        <div
+          v-if="selectedFile"
+          class="upload-actions"
+        >
           <el-button
             type="primary"
             size="large"
@@ -42,14 +47,19 @@
             :disabled="!selectedFile || isProcessing"
             @click="startGeneration"
           >
-            <el-icon v-if="!isProcessing"><magic-stick /></el-icon>
+            <el-icon v-if="!isProcessing">
+              <magic-stick />
+            </el-icon>
             {{ isProcessing ? 'Обработка...' : 'Запустить генерацию' }}
           </el-button>
         </div>
       </el-card>
 
       <!-- Progress Section -->
-      <el-card v-if="taskId" class="progress-card">
+      <el-card
+        v-if="taskId"
+        class="progress-card"
+      >
         <h3>Прогресс обработки</h3>
         <div class="progress-content">
           <el-progress
@@ -59,10 +69,20 @@
             striped
             striped-flow
           />
-          <p class="progress-step">{{ currentStep || 'Ожидание...' }}</p>
-          <div v-if="totalPages" class="progress-stats">
+          <p class="progress-step">
+            {{ currentStep || 'Ожидание...' }}
+          </p>
+          <div
+            v-if="totalPages"
+            class="progress-stats"
+          >
             <el-tag>Страниц: {{ processedPages || 0 }}/{{ totalPages }}</el-tag>
-            <el-tag v-if="metricsFound" type="success">Найдено метрик: {{ metricsFound }}</el-tag>
+            <el-tag
+              v-if="metricsFound"
+              type="success"
+            >
+              Найдено метрик: {{ metricsFound }}
+            </el-tag>
           </div>
           <el-alert
             v-if="error"
@@ -87,8 +107,8 @@
             <h3>Метрики на модерации</h3>
             <el-button
               size="small"
-              @click="loadPendingMetrics"
               :loading="loadingPending"
+              @click="loadPendingMetrics"
             >
               <el-icon><refresh-right /></el-icon>
               Обновить
@@ -102,25 +122,55 @@
           stripe
           style="width: 100%"
         >
-          <el-table-column label="Название" prop="name" min-width="200">
+          <el-table-column
+            label="Название"
+            prop="name"
+            min-width="200"
+          >
             <template #default="{ row }">
               <div class="metric-name">
                 <strong>{{ row.name }}</strong>
-                <el-tag v-if="row.category_name" size="small" type="info">
+                <el-tag
+                  v-if="row.category_name"
+                  size="small"
+                  type="info"
+                >
                   {{ row.category_name }}
                 </el-tag>
               </div>
-              <p v-if="row.description" class="metric-description">{{ row.description }}</p>
+              <p
+                v-if="row.description"
+                class="metric-description"
+              >
+                {{ row.description }}
+              </p>
             </template>
           </el-table-column>
 
-          <el-table-column label="Обоснование" min-width="250">
+          <el-table-column
+            label="Обоснование"
+            min-width="250"
+          >
             <template #default="{ row }">
-              <div v-if="row.ai_rationale" class="rationale">
-                <div v-if="row.ai_rationale.quotes?.length" class="quotes">
-                  <el-text type="info" size="small">Цитаты:</el-text>
+              <div
+                v-if="row.ai_rationale"
+                class="rationale"
+              >
+                <div
+                  v-if="row.ai_rationale.quotes?.length"
+                  class="quotes"
+                >
+                  <el-text
+                    type="info"
+                    size="small"
+                  >
+                    Цитаты:
+                  </el-text>
                   <ul>
-                    <li v-for="(quote, i) in row.ai_rationale.quotes.slice(0, 2)" :key="i">
+                    <li
+                      v-for="(quote, i) in row.ai_rationale.quotes.slice(0, 2)"
+                      :key="i"
+                    >
                       "{{ quote }}"
                     </li>
                   </ul>
@@ -133,11 +183,21 @@
                   Стр. {{ row.ai_rationale.page_numbers.join(', ') }}
                 </el-tag>
               </div>
-              <el-text v-else type="info" size="small">Нет данных</el-text>
+              <el-text
+                v-else
+                type="info"
+                size="small"
+              >
+                Нет данных
+              </el-text>
             </template>
           </el-table-column>
 
-          <el-table-column label="Действия" width="200" fixed="right">
+          <el-table-column
+            label="Действия"
+            width="200"
+            fixed="right"
+          >
             <template #default="{ row }">
               <el-button-group>
                 <el-button
@@ -163,8 +223,13 @@
           </el-table-column>
         </el-table>
 
-        <div v-if="pendingTotal > pendingMetrics.length" class="load-more">
-          <el-button @click="loadMorePending">Загрузить ещё</el-button>
+        <div
+          v-if="pendingTotal > pendingMetrics.length"
+          class="load-more"
+        >
+          <el-button @click="loadMorePending">
+            Загрузить ещё
+          </el-button>
         </div>
 
         <el-empty

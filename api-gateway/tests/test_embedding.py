@@ -60,7 +60,7 @@ class MockTransport(OpenRouterTransport):
 
         # Default embedding response
         return {
-            "data": [{"embedding": [0.1] * 3072, "index": 0}],
+            "data": [{"embedding": [0.1] * 1536, "index": 0}],
             "model": "openai/text-embedding-3-large",
             "usage": {"prompt_tokens": 10, "total_tokens": 10},
         }
@@ -69,7 +69,7 @@ class MockTransport(OpenRouterTransport):
         pass
 
 
-def create_mock_embedding(dimensions: int = 3072) -> list[float]:
+def create_mock_embedding(dimensions: int = 1536) -> list[float]:
     """Create a mock embedding vector."""
     return [0.1] * dimensions
 
@@ -173,7 +173,7 @@ class TestGenerateEmbedding:
         """
         # Arrange
         mock_transport = MockTransport(responses=[{
-            "data": [{"embedding": [0.5, 0.3, 0.2] + [0.1] * 3069, "index": 0}],
+            "data": [{"embedding": [0.5, 0.3, 0.2] + [0.1] * 1533, "index": 0}],
             "model": "openai/text-embedding-3-large",
             "usage": {"prompt_tokens": 5, "total_tokens": 5},
         }])
@@ -191,7 +191,7 @@ class TestGenerateEmbedding:
 
         # Assert
         assert isinstance(result, list)
-        assert len(result) == 3072
+        assert len(result) == 1536
         assert result[0] == 0.5
         assert result[1] == 0.3
 
@@ -205,7 +205,7 @@ class TestGenerateEmbedding:
         Test that embedding is correctly extracted from nested response structure.
         """
         # Arrange
-        expected_embedding = [float(i) / 3072 for i in range(3072)]
+        expected_embedding = [float(i) / 1536 for i in range(1536)]
         mock_transport = MockTransport(responses=[{
             "data": [{"embedding": expected_embedding, "index": 0}],
             "model": "openai/text-embedding-3-large",
@@ -382,26 +382,7 @@ class TestGetEmbeddingStatsUnit:
 
 # Integration tests - require actual database with pgvector
 # These tests require the metric_embedding table to exist (run migrations first)
-# Mark as integration and skip if table doesn't exist
-
-async def check_metric_embedding_table_exists(db_session: AsyncSession) -> bool:
-    """Check if metric_embedding table exists in the database."""
-    try:
-        from sqlalchemy import text
-        result = await db_session.execute(
-            text("SELECT 1 FROM information_schema.tables WHERE table_name = 'metric_embedding'")
-        )
-        return result.scalar() is not None
-    except Exception:
-        return False
-
-
-@pytest_asyncio.fixture
-async def skip_if_no_embedding_table(db_session: AsyncSession):
-    """Skip test if metric_embedding table doesn't exist."""
-    exists = await check_metric_embedding_table_exists(db_session)
-    if not exists:
-        pytest.skip("metric_embedding table not found - run migrations first")
+# Uses skip_if_no_pgvector fixture from conftest.py
 
 
 @pytest_asyncio.fixture
@@ -457,7 +438,7 @@ async def metric_with_synonyms(db_session: AsyncSession) -> MetricDef:
 async def test_index_metric_creates_new_embedding(
     db_session: AsyncSession,
     metric_def: MetricDef,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: index_metric creates new MetricEmbedding if none exists.
@@ -502,7 +483,7 @@ async def test_index_metric_creates_new_embedding(
 async def test_index_metric_updates_existing_embedding(
     db_session: AsyncSession,
     metric_def: MetricDef,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: index_metric updates existing MetricEmbedding.
@@ -522,7 +503,7 @@ async def test_index_metric_updates_existing_embedding(
     old_indexed_at = initial_embedding.indexed_at
 
     mock_transport = MockTransport(responses=[{
-        "data": [{"embedding": [0.9] * 3072, "index": 0}],
+        "data": [{"embedding": [0.9] * 1536, "index": 0}],
         "model": "openai/text-embedding-3-large",
         "usage": {"prompt_tokens": 5, "total_tokens": 5},
     }])
@@ -549,7 +530,7 @@ async def test_index_metric_updates_existing_embedding(
 async def test_index_metric_includes_synonyms(
     db_session: AsyncSession,
     metric_with_synonyms: MetricDef,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: index_metric includes synonyms in indexed text.
@@ -583,7 +564,7 @@ async def test_index_metric_includes_synonyms(
 async def test_get_embedding_stats_integration(
     db_session: AsyncSession,
     metric_def: MetricDef,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: get_embedding_stats returns correct counts.
@@ -611,7 +592,7 @@ async def test_get_embedding_stats_integration(
 async def test_delete_embedding(
     db_session: AsyncSession,
     metric_def: MetricDef,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: delete_embedding removes the embedding record.
@@ -646,7 +627,7 @@ async def test_delete_embedding(
 @pytest.mark.integration
 async def test_delete_embedding_not_found(
     db_session: AsyncSession,
-    skip_if_no_embedding_table,
+    skip_if_no_pgvector,
 ):
     """
     Integration test: delete_embedding returns False if not found.

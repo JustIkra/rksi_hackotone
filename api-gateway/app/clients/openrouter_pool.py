@@ -22,7 +22,6 @@ from app.clients.exceptions import (
     OpenRouterTimeoutError,
     OpenRouterValidationError,
 )
-from app.clients.key_pool import KeyPool
 from app.clients.openrouter import HttpxTransport, OpenRouterClient, OpenRouterTransport
 from app.clients.rate_limiter import RateLimiter
 
@@ -125,11 +124,17 @@ class OpenRouterPoolClient:
             for key in api_keys
         }
 
-        # Key pool for rotation
-        self._key_pool = KeyPool(api_keys, strategy=strategy)
+        # Key statistics for monitoring
+        self._key_stats: dict[str, dict] = {
+            key: {"successes": 0, "failures": 0, "total_latency": 0.0}
+            for key in api_keys
+        }
 
         # Lock for thread-safe key selection
         self._lock = asyncio.Lock()
+
+        # Round-robin index for key selection
+        self._round_robin_index = 0
 
         logger.info(
             "openrouter_pool_initialized",
@@ -142,11 +147,37 @@ class OpenRouterPoolClient:
             },
         )
 
+    def _get_next_key_round_robin(self) -> str:
+        """Get next key using round-robin strategy."""
+        key = self.api_keys[self._round_robin_index]
+        self._round_robin_index = (self._round_robin_index + 1) % len(self.api_keys)
+        return key
+
+    def _get_next_key_least_busy(self) -> str:
+        """Get key with most available rate limit tokens."""
+        best_key = self.api_keys[0]
+        best_tokens = -1.0
+
+        for key in self.api_keys:
+            # Skip keys with open circuit
+            if self._circuit_breakers[key].state == CircuitState.OPEN:
+                continue
+
+            tokens = self._rate_limiters[key].available_tokens
+            if tokens > best_tokens:
+                best_tokens = tokens
+                best_key = key
+
+        return best_key
+
     async def _select_key(self) -> str | None:
         """Select next available key based on strategy."""
         async with self._lock:
             for _ in range(len(self.api_keys)):
-                key = self._key_pool.get_next_key()
+                if self.strategy == "LEAST_BUSY":
+                    key = self._get_next_key_least_busy()
+                else:
+                    key = self._get_next_key_round_robin()
 
                 # Check circuit breaker
                 cb = self._circuit_breakers[key]
@@ -161,9 +192,34 @@ class OpenRouterPoolClient:
                 return key
 
             # No key available, wait for rate limiter
-            key = self._key_pool.get_next_key()
+            if self.strategy == "LEAST_BUSY":
+                key = self._get_next_key_least_busy()
+            else:
+                key = self._get_next_key_round_robin()
             await self._rate_limiters[key].acquire()
             return key
+
+    def _record_key_success(self, key: str, latency: float) -> None:
+        """Record successful request for a key."""
+        stats = self._key_stats[key]
+        stats["successes"] += 1
+        stats["total_latency"] += latency
+
+    def _record_key_failure(self, key: str, status_code: int) -> None:
+        """Record failed request for a key."""
+        stats = self._key_stats[key]
+        stats["failures"] += 1
+        stats["last_error_code"] = status_code
+
+    def _get_key_stats(self, key: str) -> dict[str, Any]:
+        """Get statistics for a specific key."""
+        stats = self._key_stats[key]
+        successes = stats["successes"]
+        return {
+            "successes": successes,
+            "failures": stats["failures"],
+            "avg_latency": stats["total_latency"] / successes if successes > 0 else 0.0,
+        }
 
     async def _execute_with_pool(
         self,
@@ -194,12 +250,14 @@ class OpenRouterPoolClient:
                     result = await client.generate_text(**kwargs)
                 elif method == "generate_from_image":
                     result = await client.generate_from_image(**kwargs)
+                elif method == "generate_from_pdf":
+                    result = await client.generate_from_pdf(**kwargs)
                 else:
                     raise ValueError(f"Unknown method: {method}")
 
                 # Record success
                 cb.record_success()
-                self._key_pool.record_success(key, time.monotonic() - start_time)
+                self._record_key_success(key, time.monotonic() - start_time)
 
                 return result
 
@@ -208,7 +266,7 @@ class OpenRouterPoolClient:
                 cb.record_failure()
                 cb.record_failure()
                 cb.record_failure()  # Fast-track circuit opening
-                self._key_pool.record_failure(key, 429)
+                self._record_key_failure(key, 429)
 
                 logger.warning(
                     "openrouter_pool_rate_limit",
@@ -221,7 +279,7 @@ class OpenRouterPoolClient:
             except OpenRouterServiceError as e:
                 last_error = e
                 # Don't affect circuit breaker for service errors
-                self._key_pool.record_failure(key, e.status_code or 503)
+                self._record_key_failure(key, e.status_code or 503)
 
                 logger.warning(
                     "openrouter_pool_service_error",
@@ -232,7 +290,7 @@ class OpenRouterPoolClient:
             except (OpenRouterServerError, OpenRouterTimeoutError) as e:
                 last_error = e
                 cb.record_failure()
-                self._key_pool.record_failure(key, getattr(e, "status_code", 500))
+                self._record_key_failure(key, getattr(e, "status_code", 500))
 
                 logger.warning(
                     "openrouter_pool_transient_error",
@@ -241,7 +299,7 @@ class OpenRouterPoolClient:
 
             except (OpenRouterAuthError, OpenRouterValidationError) as e:
                 # Non-retryable errors
-                self._key_pool.record_failure(key, getattr(e, "status_code", 400))
+                self._record_key_failure(key, getattr(e, "status_code", 400))
                 raise
 
         # All retries exhausted
@@ -283,6 +341,24 @@ class OpenRouterPoolClient:
             timeout=timeout,
         )
 
+    async def generate_from_pdf(
+        self,
+        prompt: str,
+        pdf_data: bytes,
+        system_instructions: str | None = None,
+        response_mime_type: str = "text/plain",
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Generate text from PDF using pool rotation."""
+        return await self._execute_with_pool(
+            "generate_from_pdf",
+            prompt=prompt,
+            pdf_data=pdf_data,
+            system_instructions=system_instructions,
+            response_mime_type=response_mime_type,
+            timeout=timeout,
+        )
+
     def get_pool_stats(self) -> dict[str, Any]:
         """Get pool statistics for monitoring."""
         return {
@@ -292,7 +368,7 @@ class OpenRouterPoolClient:
                 key[-8:]: {
                     "circuit_state": self._circuit_breakers[key].state.value,
                     "rate_limiter_tokens": self._rate_limiters[key].available_tokens,
-                    **self._key_pool.get_key_stats(key),
+                    **self._get_key_stats(key),
                 }
                 for key in self.api_keys
             },

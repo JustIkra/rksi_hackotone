@@ -6,14 +6,16 @@ Handles asynchronous processing of documents with progress tracking.
 
 from __future__ import annotations
 
-import asyncio
+import base64
+import json
 import logging
 
+from asgiref.sync import async_to_sync
 from redis import Redis
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.db.session import AsyncSessionLocal
+from app.db.celery_session import get_celery_session_factory
 from app.services.metric_generation import MetricGenerationService
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,26 @@ def get_redis_client() -> Redis | None:
     except Exception as e:
         logger.warning(f"Failed to connect to Redis: {e}")
         return None
+
+
+async def _process_document_async(
+    task_id: str,
+    file_data: bytes,
+    filename: str,
+) -> dict:
+    """Async implementation for document processing."""
+    redis = get_redis_client()
+
+    # Create session factory in current event loop context
+    AsyncSessionLocal = get_celery_session_factory()
+
+    async with AsyncSessionLocal() as db:
+        service = MetricGenerationService(db=db, redis=redis)
+        try:
+            result = await service.process_document(task_id, file_data, filename)
+            return result
+        finally:
+            await service.close()
 
 
 @celery_app.task(
@@ -50,29 +72,22 @@ def generate_metrics_from_document(
     Returns:
         Result summary with created/matched metrics
     """
-    import base64
-
     task_id = self.request.id
     logger.info(f"Starting metric generation task {task_id} for {filename}")
 
     # Decode file data
     file_data = base64.b64decode(file_data_b64)
 
-    # Run async processing
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     try:
-        result = loop.run_until_complete(
-            _process_document_async(task_id, file_data, filename)
-        )
+        # Use async_to_sync to properly manage event loop lifecycle
+        # This avoids "Future attached to a different loop" errors
+        result = async_to_sync(_process_document_async)(task_id, file_data, filename)
         return result
     except Exception as e:
         logger.exception(f"Metric generation task {task_id} failed: {e}")
         # Update progress with error
         redis = get_redis_client()
         if redis:
-            import json
             redis.setex(
                 f"metric_gen:{task_id}",
                 3600,
@@ -83,25 +98,6 @@ def generate_metrics_from_document(
                 }),
             )
         raise
-    finally:
-        loop.close()
-
-
-async def _process_document_async(
-    task_id: str,
-    file_data: bytes,
-    filename: str,
-) -> dict:
-    """Async wrapper for document processing."""
-    redis = get_redis_client()
-
-    async with AsyncSessionLocal() as db:
-        service = MetricGenerationService(db=db, redis=redis)
-        try:
-            result = await service.process_document(task_id, file_data, filename)
-            return result
-        finally:
-            await service.close()
 
 
 @celery_app.task(
@@ -117,8 +113,6 @@ def get_metric_generation_status(task_id: str) -> dict:
     Returns:
         Task status with progress
     """
-    import json
-
     redis = get_redis_client()
     if not redis:
         return {"status": "unknown", "error": "Redis unavailable"}

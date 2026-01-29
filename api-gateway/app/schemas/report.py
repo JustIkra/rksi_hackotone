@@ -44,6 +44,8 @@ class ReportResponse(BaseModel):
     uploaded_at: datetime
     extracted_at: datetime | None
     extract_error: str | None
+    extract_warning: str | None = None
+    extract_warning_details: dict | None = None
     file_ref: FileRefResponse
 
     model_config = {"from_attributes": True}
@@ -60,14 +62,3 @@ class ReportListResponse(BaseModel):
 
     items: list[ReportResponse]
     total: int
-
-
-class ReportImageResponse(BaseModel):
-    """Response schema for report images with base64 data URL."""
-
-    id: UUID
-    filename: str
-    data_url: str = Field(..., description="Base64-encoded data URL (data:image/png;base64,...)")
-    page_number: int | None = None
-
-    model_config = {"from_attributes": True}

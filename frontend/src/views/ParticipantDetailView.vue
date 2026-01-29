@@ -284,6 +284,7 @@
           v-if="currentReportId"
           :report-id="currentReportId"
           :report-status="currentReportStatus"
+          :report-extract-warning="currentReportExtractWarning"
           @metrics-updated="handleMetricsUpdated"
         />
       </el-dialog>
@@ -360,6 +361,12 @@ const currentReportStatus = computed(() => {
   return report?.status || null
 })
 
+// Get extract_warning of the current report
+const currentReportExtractWarning = computed(() => {
+  if (!currentReportId.value) return null
+  const report = reports.value.find(r => r.id === currentReportId.value)
+  return report?.extract_warning || null
+})
 
 const showUploadDialog = ref(false)
 const showScoringDialog = ref(false)

@@ -142,8 +142,7 @@ class MetricGenerationService:
         return hashlib.sha256(file_data).hexdigest()
 
     def convert_docx_to_pdf(self, docx_data: bytes) -> bytes:
-        """
-        Convert DOCX to PDF using LibreOffice headless mode.
+        """Convert DOCX document to PDF.
 
         Args:
             docx_data: DOCX file content bytes
@@ -154,65 +153,8 @@ class MetricGenerationService:
         Raises:
             RuntimeError: If LibreOffice is not installed or conversion fails
         """
-        import shutil
-        import subprocess
-        import tempfile
-
-        # Check if LibreOffice is available
-        libreoffice_cmd = shutil.which("libreoffice") or shutil.which("soffice")
-        if not libreoffice_cmd:
-            raise RuntimeError(
-                "LibreOffice not installed. Install with: "
-                "apt-get install libreoffice-writer (Linux) or "
-                "brew install --cask libreoffice (macOS)"
-            )
-
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                docx_path = Path(tmpdir) / "input.docx"
-                docx_path.write_bytes(docx_data)
-
-                # Convert DOCX to PDF using LibreOffice headless
-                result = subprocess.run(
-                    [
-                        libreoffice_cmd,
-                        "--headless",
-                        "--convert-to", "pdf",
-                        "--outdir", tmpdir,
-                        str(docx_path),
-                    ],
-                    capture_output=True,
-                    timeout=120,
-                    check=False,
-                )
-
-                if result.returncode != 0:
-                    stderr = result.stderr.decode("utf-8", errors="replace")
-                    raise RuntimeError(f"LibreOffice conversion failed: {stderr}")
-
-                # Read resulting PDF
-                pdf_path = Path(tmpdir) / "input.pdf"
-                if not pdf_path.exists():
-                    raise RuntimeError(
-                        "LibreOffice conversion produced no output file. "
-                        f"stdout: {result.stdout.decode('utf-8', errors='replace')}"
-                    )
-
-                pdf_data = pdf_path.read_bytes()
-                if not pdf_data:
-                    raise RuntimeError("Conversion produced empty PDF")
-
-                return pdf_data
-
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                "DOCX to PDF conversion timed out (120s). File may be too large."
-            )
-        except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise
-            logger.exception(f"DOCX→PDF conversion failed: {e}")
-            raise RuntimeError(f"DOCX to PDF conversion failed: {e}")
+        from app.services.docx_to_pdf import convert_docx_bytes_to_pdf_bytes
+        return convert_docx_bytes_to_pdf_bytes(docx_data)
 
     # ==================== Context Loading ====================
 

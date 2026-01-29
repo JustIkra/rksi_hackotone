@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.openrouter import OpenRouterClient
@@ -274,31 +274,27 @@ class EmbeddingService:
         # Generate embedding for query
         query_embedding = await self.generate_embedding(query_text)
 
-        # Vector search using cosine distance operator <=>
-        # Cosine similarity = 1 - cosine_distance
-        # Based on Context7 pgvector docs: ORDER BY embedding <=> :embedding
-        sql = text("""
-            SELECT
-                me.metric_def_id,
-                md.code,
-                md.name,
-                md.name_ru,
-                md.description,
-                1 - (me.embedding <=> :embedding::vector) as similarity
-            FROM metric_embedding me
-            JOIN metric_def md ON md.id = me.metric_def_id
-            WHERE md.moderation_status = 'APPROVED'
-            ORDER BY me.embedding <=> :embedding::vector
-            LIMIT :top_k
-        """)
+        # Vector search using pgvector SQLAlchemy ORM methods
+        # cosine_distance() returns distance, similarity = 1 - distance
+        # Using ORM avoids parameter binding issues with asyncpg
+        from sqlalchemy.sql import func
 
-        result = await self.db.execute(
-            sql,
-            {
-                "embedding": str(query_embedding),
-                "top_k": top_k,
-            },
+        stmt = (
+            select(
+                MetricEmbedding.metric_def_id,
+                MetricDef.code,
+                MetricDef.name,
+                MetricDef.name_ru,
+                MetricDef.description,
+                (1 - MetricEmbedding.embedding.cosine_distance(query_embedding)).label("similarity"),
+            )
+            .join(MetricDef, MetricDef.id == MetricEmbedding.metric_def_id)
+            .where(MetricDef.moderation_status == "APPROVED")
+            .order_by(MetricEmbedding.embedding.cosine_distance(query_embedding))
+            .limit(top_k)
         )
+
+        result = await self.db.execute(stmt)
 
         matches = []
         for row in result.all():

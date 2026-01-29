@@ -12,7 +12,11 @@ celery_app = Celery(
     "workers_prof",
     broker=settings.rabbitmq_url,
     backend=settings.redis_url,
-    include=["app.tasks.extraction"],
+    include=[
+        "app.tasks.extraction",
+        "app.tasks.metric_generation",
+        "app.tasks.embedding",
+    ],
 )
 
 # Configure Celery
@@ -30,6 +34,9 @@ celery_app.conf.update(
     # Task routing
     task_routes={
         "app.tasks.extraction.*": {"queue": "extraction"},
+        "app.tasks.metric_generation.*": {"queue": "extraction"},
+        "app.tasks.embedding.*": {"queue": "extraction"},
+        "tasks.*": {"queue": "extraction"},  # For tasks with short names
     },
     # For testing
     task_always_eager=settings.celery_task_always_eager,

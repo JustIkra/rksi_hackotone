@@ -4,14 +4,12 @@ Report upload and download endpoints.
 
 from __future__ import annotations
 
-import base64
 from uuid import UUID
 
 from fastapi import (
     APIRouter,
     Depends,
     File,
-    HTTPException,
     Request,
     Response,
     UploadFile,
@@ -20,20 +18,16 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.dependencies import get_current_active_user
 from app.db.models import User
 from app.db.session import get_db
-from app.repositories.report_image import ReportImageRepository
 from app.schemas.report import (
-    ReportImageResponse,
     ReportListResponse,
     ReportResponse,
     ReportUploadResponse,
 )
 from app.services.report import ReportService
-from app.services.storage import LocalReportStorage
-from app.tasks.extraction import extract_images_from_report
+from app.tasks.extraction import extract_metrics_from_report_pdf
 
 router = APIRouter(tags=["reports"])
 
@@ -154,7 +148,7 @@ async def extract_report(
 
     # Queue extraction task
     request_id = getattr(request.state, "request_id", None)
-    task = extract_images_from_report.delay(str(report_id), request_id=request_id)
+    task = extract_metrics_from_report_pdf.delay(str(report_id), request_id=request_id)
 
     return {
         "report_id": str(report_id),
@@ -162,93 +156,3 @@ async def extract_report(
         "status": "accepted",
         "message": "Extraction task started",
     }
-
-
-@router.get("/reports/{report_id}/images", response_model=list[ReportImageResponse])
-async def get_report_images(
-    report_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> list[ReportImageResponse]:
-    """
-    Get all images for a report as base64 data URLs.
-
-    Returns list of images with:
-    - id: Image UUID
-    - filename: Original filename
-    - data_url: Base64-encoded data URL (data:image/png;base64,...)
-    - page_number: Page number in document (if available)
-
-    Requires active authentication.
-    """
-    # Verify report exists
-    report_service = ReportService(db)
-    await report_service.get_report_by_id(report_id)
-
-    # Get all images for the report
-    image_repo = ReportImageRepository(db)
-    images = await image_repo.get_by_report(report_id)
-
-    if not images:
-        return []
-
-    # Initialize storage
-    storage = LocalReportStorage(settings.file_storage_base)
-
-    # Convert images to response format
-    result = []
-    for image in images:
-        if not image.file_ref or image.file_ref.storage != "LOCAL":
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Only LOCAL storage is supported in this version.",
-            )
-
-        # Resolve file path
-        file_path = storage.resolve_path(image.file_ref.key)
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Image file not found: {image.file_ref.filename}",
-            )
-
-        # Read file and encode to base64
-        try:
-            with file_path.open("rb") as f:
-                file_data = f.read()
-            base64_data = base64.b64encode(file_data).decode("utf-8")
-
-            # Determine MIME type from file extension or file_ref
-            mime_type = image.file_ref.mime
-            if not mime_type or mime_type == "application/octet-stream":
-                # Infer from filename
-                if image.file_ref.filename:
-                    ext = image.file_ref.filename.lower().split(".")[-1]
-                    mime_map = {
-                        "png": "image/png",
-                        "jpg": "image/jpeg",
-                        "jpeg": "image/jpeg",
-                        "gif": "image/gif",
-                        "webp": "image/webp",
-                    }
-                    mime_type = mime_map.get(ext, "image/png")
-                else:
-                    mime_type = "image/png"
-
-            data_url = f"data:{mime_type};base64,{base64_data}"
-
-            result.append(
-                ReportImageResponse(
-                    id=image.id,
-                    filename=image.file_ref.filename or f"image_{image.order_index}.png",
-                    data_url=data_url,
-                    page_number=image.page if image.page >= 0 else None,
-                )
-            )
-        except OSError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to read image file: {exc}",
-            ) from exc
-
-    return result

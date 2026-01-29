@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 
 async def _index_metric_async(metric_id: UUID) -> dict:
     """Async helper for indexing a single metric."""
-    from app.db.session import AsyncSessionLocal
+    from app.db.celery_session import get_celery_session_factory
     from app.services.embedding import EmbeddingService
+
+    # Create session factory in current event loop context
+    AsyncSessionLocal = get_celery_session_factory()
 
     async with AsyncSessionLocal() as db:
         service = EmbeddingService(db)
@@ -37,8 +40,11 @@ async def _index_metric_async(metric_id: UUID) -> dict:
 
 async def _index_all_metrics_async() -> dict:
     """Async helper for indexing all metrics."""
-    from app.db.session import AsyncSessionLocal
+    from app.db.celery_session import get_celery_session_factory
     from app.services.embedding import EmbeddingService
+
+    # Create session factory in current event loop context
+    AsyncSessionLocal = get_celery_session_factory()
 
     async with AsyncSessionLocal() as db:
         service = EmbeddingService(db)

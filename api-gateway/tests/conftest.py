@@ -144,7 +144,7 @@ async def admin_user(db_session: AsyncSession) -> User:
     """
     user = User(
         id=uuid.uuid4(),
-        email="admin@test.com",
+        email=f"admin_{uuid.uuid4().hex[:8]}@test.com",
         password_hash=hash_password("AdminPass123"),
         full_name="Test Admin",
         role="ADMIN",
@@ -168,7 +168,7 @@ async def active_user(db_session: AsyncSession) -> User:
     """
     user = User(
         id=uuid.uuid4(),
-        email="user@test.com",
+        email=f"user_{uuid.uuid4().hex[:8]}@test.com",
         password_hash=hash_password("UserPass123"),
         full_name="Test User",
         role="USER",
@@ -192,7 +192,7 @@ async def pending_user(db_session: AsyncSession) -> User:
     """
     user = User(
         id=uuid.uuid4(),
-        email="pending@test.com",
+        email=f"pending_{uuid.uuid4().hex[:8]}@test.com",
         password_hash=hash_password("PendingPass123"),
         full_name="Pending User",
         role="USER",
@@ -381,6 +381,39 @@ async def user_only_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClie
 
 import tempfile
 from unittest.mock import patch
+
+import pytest
+from sqlalchemy import text
+
+
+# pgvector availability check
+
+async def check_metric_embedding_table_exists(db_session: AsyncSession) -> bool:
+    """Check if metric_embedding table exists in the database."""
+    try:
+        result = await db_session.execute(
+            text("SELECT 1 FROM information_schema.tables WHERE table_name = 'metric_embedding'")
+        )
+        return result.scalar() is not None
+    except Exception:
+        return False
+
+
+@pytest_asyncio.fixture
+async def skip_if_no_pgvector(db_session: AsyncSession):
+    """
+    Skip test if metric_embedding table doesn't exist.
+
+    Use this fixture for tests that require pgvector extension
+    (e.g., tests that delete MetricDef with cascade to metric_embedding).
+
+    Usage:
+        async def test_something(client, admin_user, skip_if_no_pgvector):
+            # test code here
+    """
+    exists = await check_metric_embedding_table_exists(db_session)
+    if not exists:
+        pytest.skip("metric_embedding table not found - run migrations with pgvector first")
 
 
 @pytest_asyncio.fixture(autouse=True)

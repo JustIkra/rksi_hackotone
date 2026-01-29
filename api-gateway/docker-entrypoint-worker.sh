@@ -22,6 +22,6 @@ async def check_metrics():
 asyncio.run(check_metrics())
 " || echo "WARNING: Failed to check metric definitions (database may not be ready yet)"
 
-echo "Starting Celery worker for extraction queue..."
-exec celery -A app.core.celery_app.celery_app worker -l info -Q extraction
+echo "Starting Celery worker for extraction and default queues..."
+exec celery -A app.core.celery_app.celery_app worker -l info -Q extraction,celery
 

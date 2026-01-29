@@ -157,6 +157,30 @@ class Settings(BaseSettings):
         description="Number of similar metrics to retrieve for matching",
     )
 
+    # Report RAG Settings
+    report_rag_top_k: int = Field(
+        default=5,
+        ge=1,
+        description="Default number of similar reports to retrieve for RAG context",
+    )
+    report_rag_max_top_k: int = Field(
+        default=50,
+        ge=1,
+        description="Maximum allowed top_k value for report RAG queries",
+    )
+    report_rag_similarity_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity score for report RAG matches",
+    )
+    report_rag_ambiguity_delta: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=1.0,
+        description="Delta threshold for detecting ambiguous matches in RAG",
+    )
+
     # Computed Properties
     def _parse_comma_separated(self, value: str) -> list[str]:
         """Helper to parse comma-separated strings."""
