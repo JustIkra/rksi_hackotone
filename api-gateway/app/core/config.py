@@ -202,13 +202,13 @@ class Settings(BaseSettings):
         description="Semantic similarity threshold for pre-extraction deduplication",
     )
     rag_candidate_min_threshold: float = Field(
-        default=0.5,
+        default=0.3,
         ge=0.0,
         le=1.0,
-        description="Minimum similarity threshold for RAG candidates",
+        description="Minimum similarity threshold for RAG candidates (lowered to catch more potential matches)",
     )
     rag_auto_match_threshold: float = Field(
-        default=0.95,
+        default=0.85,
         ge=0.0,
         le=1.0,
         description="Auto-match threshold (skip LLM if similarity above this)",
