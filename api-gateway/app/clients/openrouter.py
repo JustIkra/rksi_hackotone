@@ -298,6 +298,7 @@ class OpenRouterClient:
         system_instructions: str | None = None,
         response_mime_type: str = "text/plain",
         timeout: float | None = None,
+        json_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate text using OpenRouter API.
@@ -307,6 +308,7 @@ class OpenRouterClient:
             system_instructions: Optional system message
             response_mime_type: "text/plain" or "application/json"
             timeout: Request timeout override
+            json_schema: Optional JSON schema for structured outputs (OpenRouter Structured Outputs)
 
         Returns:
             Raw API response with choices[0].message.content
@@ -333,7 +335,18 @@ class OpenRouterClient:
 
         # Request JSON format if needed
         if response_mime_type == "application/json":
-            payload["response_format"] = {"type": "json_object"}
+            if json_schema is not None:
+                # Use Structured Outputs with strict schema validation
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
 
         logger.debug(
             "openrouter_generate_text",
@@ -353,6 +366,7 @@ class OpenRouterClient:
         mime_type: str = "image/png",
         response_mime_type: str = "application/json",
         timeout: float | None = None,
+        json_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate text from image using OpenRouter API.
@@ -363,6 +377,7 @@ class OpenRouterClient:
             mime_type: Image MIME type (image/png, image/jpeg)
             response_mime_type: Response format
             timeout: Request timeout override
+            json_schema: Optional JSON schema for structured outputs
 
         Returns:
             Raw API response with choices[0].message.content
@@ -389,7 +404,17 @@ class OpenRouterClient:
         }
 
         if response_mime_type == "application/json":
-            payload["response_format"] = {"type": "json_object"}
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
 
         logger.debug(
             "openrouter_generate_from_image",
@@ -410,11 +435,12 @@ class OpenRouterClient:
         system_instructions: str | None = None,
         response_mime_type: str = "text/plain",
         timeout: float | None = None,
+        json_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Generate text from PDF document using OpenRouter PDF Inputs.
 
-        Uses OpenRouter's file-parser plugin for native PDF processing.
+        Forces OpenRouter's file-parser plugin to use Mistral OCR engine.
         The entire PDF is sent as a base64-encoded file attachment.
 
         Args:
@@ -423,6 +449,7 @@ class OpenRouterClient:
             system_instructions: Optional system message
             response_mime_type: "text/plain" or "application/json"
             timeout: Request timeout override
+            json_schema: Optional JSON schema for structured outputs
 
         Returns:
             Raw API response with choices[0].message.content
@@ -459,10 +486,28 @@ class OpenRouterClient:
             "messages": messages,
             "temperature": 0.1,  # Low temperature for consistent extraction
             "max_tokens": 8192,
+            "plugins": [
+                {
+                    "id": "file-parser",
+                    "pdf": {
+                        "engine": "mistral-ocr",
+                    },
+                },
+            ],
         }
 
         if response_mime_type == "application/json":
-            payload["response_format"] = {"type": "json_object"}
+            if json_schema is not None:
+                payload["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "strict": True,
+                        "schema": json_schema,
+                    },
+                }
+            else:
+                payload["response_format"] = {"type": "json_object"}
 
         logger.debug(
             "openrouter_generate_from_pdf",

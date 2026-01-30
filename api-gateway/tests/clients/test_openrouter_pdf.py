@@ -85,6 +85,9 @@ async def test_generate_from_pdf_sends_correct_payload():
     expected_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     assert file_part["file"]["file_data"] == f"data:application/pdf;base64,{expected_b64}"
 
+    # Verify PDF engine is forced to Mistral OCR
+    assert payload["plugins"] == [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}]
+
     await client.close()
 
 
@@ -151,5 +154,40 @@ async def test_generate_from_pdf_custom_timeout():
     )
 
     assert mock_transport.requests[0]["timeout"] == 300
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_generate_from_pdf_with_json_schema():
+    """Test that json_schema triggers structured outputs format."""
+    mock_transport = MockTransport()
+    client = OpenRouterClient(
+        api_key="test-key",
+        transport=mock_transport,
+    )
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "metrics": {
+                "type": "array",
+                "items": {"type": "object"},
+            }
+        },
+        "required": ["metrics"],
+    }
+
+    await client.generate_from_pdf(
+        prompt="Extract metrics",
+        pdf_data=b"%PDF-1.4 test",
+        response_mime_type="application/json",
+        json_schema=schema,
+    )
+
+    payload = mock_transport.requests[0]["json"]
+    assert payload["response_format"]["type"] == "json_schema"
+    assert payload["response_format"]["json_schema"]["strict"] is True
+    assert payload["response_format"]["json_schema"]["schema"] == schema
 
     await client.close()
