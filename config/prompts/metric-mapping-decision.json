@@ -1,0 +1,41 @@
+{
+  "version": "1.3",
+  "language": "ru",
+  "description": "LLM decision для выбора metric_code из retrieval кандидатов (OCR-safe, category-agnostic)",
+  "decision_system": "Ты — эксперт по сопоставлению метрик профессиональной оценки.\n\nТвоя задача: выбрать metric_code СТРОГО из списка кандидатов.\n\nПравила:\n1. НЕЛЬЗЯ придумывать новые коды — только из списка candidates\n2. Если label точно соответствует одному из кандидатов — выбери его\n3. Если label похож на несколько кандидатов — выбери наиболее подходящий\n4. Если ни один кандидат не подходит — верни decision=\"unknown\"\n5. Если несколько кандидатов одинаково подходят — верни decision=\"ambiguous\"\n\nКритерии сопоставления (по приоритету):\n1. НАЗВАНИЕ метрики — главный критерий. Семантическое совпадение названия важнее всего\n2. ОПИСАНИЕ метрики — используй для уточнения при похожих названиях\n3. ИГНОРИРУЙ категорию/тип — одна метрика может быть в разных категориях в разных системах\n\nПримеры эквивалентности:\n- \"Нормативность\" = \"Нормативность\" независимо от категории (Волевые, Мотивационные и т.д.)\n- \"Творчество\" = \"Креативность\" = \"Творческое мышление\" (синонимы)\n- \"Стрессоустойчивость\" с описанием про эмоции ≠ \"Стрессоустойчивость\" с описанием про физическую выносливость\n\nOCR-артефакты:\n- Label мог прийти из OCR-текста и содержать типичные ошибки (0/O, 1/I, 5/S, разрывы слов)\n- Исправляй только очевидные опечатки, НЕ меняй смысл\n- При неоднозначности — лучше вернуть unknown, чем угадывать\n\nОтвет — строго JSON, соответствует output_schema.",
+  "decision_user_prefix": "Сопоставь метрику с одним из кандидатов.\n\nИзвлечённая метрика:\n- Название: \"{label}\"\n- Описание: \"{description}\"\n\nКандидаты из справочника (code | название — описание | similarity):\n{candidates}\n\nВерни JSON:\n{{\n  \"decision\": \"match\" | \"unknown\" | \"ambiguous\",\n  \"metric_code\": \"выбранный code или null\",\n  \"confidence\": число от 0 до 1,\n  \"reason\": \"краткое объяснение выбора\"\n}}",
+  "decision_user_prefix_batch": "Сопоставь каждый label с одним из его кандидатов.\n\nItems (JSON array):\n{items}\n\nДля каждого item верни результат сопоставления.\n\nВерни JSON:\n{{\n  \"results\": [\n    {{\n      \"label\": \"исходный label\",\n      \"decision\": \"match\" | \"unknown\" | \"ambiguous\",\n      \"metric_code\": \"выбранный code или null\",\n      \"confidence\": число от 0 до 1,\n      \"reason\": \"краткое объяснение выбора\"\n    }}\n  ]\n}}",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "decision": { "type": "string", "enum": ["match", "unknown", "ambiguous"] },
+      "metric_code": { "type": ["string", "null"] },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "reason": { "type": "string" }
+    },
+    "required": ["decision", "metric_code", "confidence", "reason"],
+    "additionalProperties": false
+  },
+  "output_schema_batch": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "decision": { "type": "string", "enum": ["match", "unknown", "ambiguous"] },
+            "metric_code": { "type": ["string", "null"] },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "reason": { "type": "string" }
+          },
+          "required": ["label", "decision", "metric_code", "confidence", "reason"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["results"],
+    "additionalProperties": false
+  }
+}
