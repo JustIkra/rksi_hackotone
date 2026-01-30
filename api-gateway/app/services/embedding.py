@@ -131,6 +131,56 @@ class EmbeddingService:
             logger.error(f"Invalid embedding response: {response}")
             raise ValueError(f"Failed to extract embedding from response: {e}") from e
 
+    async def generate_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """
+        Generate embedding vectors for multiple texts in a single API call.
+
+        Uses OpenRouter API batch embedding endpoint to reduce API calls.
+        This is more efficient than calling generate_embedding() for each text.
+
+        Args:
+            texts: List of texts to embed
+
+        Returns:
+            List of embedding vectors in the same order as input texts
+
+        Raises:
+            ValueError: If API response is invalid
+        """
+        if not texts:
+            return []
+
+        client = await self._get_client()
+
+        response = await client.create_embedding(
+            input_text=texts,
+            model=settings.embedding_model,
+            timeout=60.0,
+        )
+
+        # Extract embeddings from response and sort by index
+        # Response format: {"data": [{"embedding": [...], "index": N}, ...], ...}
+        try:
+            data = response["data"]
+            # Sort by index to ensure correct order
+            sorted_data = sorted(data, key=lambda x: x["index"])
+            embeddings = [item["embedding"] for item in sorted_data]
+
+            logger.debug(
+                "batch_embeddings_generated",
+                extra={
+                    "text_count": len(texts),
+                    "total_chars": sum(len(t) for t in texts),
+                    "embedding_dims": len(embeddings[0]) if embeddings else 0,
+                    "model": settings.embedding_model,
+                    "usage": response.get("usage"),
+                },
+            )
+            return embeddings
+        except (KeyError, IndexError) as e:
+            logger.error(f"Invalid batch embedding response: {response}")
+            raise ValueError(f"Failed to extract embeddings from response: {e}") from e
+
     async def index_metric(self, metric_def_id: uuid.UUID) -> MetricEmbedding:
         """
         Index a single metric by generating and storing its embedding.
@@ -268,8 +318,10 @@ class EmbeddingService:
         Returns:
             List of dicts with metric info and similarity scores
         """
-        top_k = top_k or settings.embedding_top_k
-        threshold = threshold or settings.embedding_similarity_threshold
+        if top_k is None:
+            top_k = settings.embedding_top_k
+        if threshold is None:
+            threshold = settings.embedding_similarity_threshold
 
         # Generate embedding for query
         query_embedding = await self.generate_embedding(query_text)
@@ -282,6 +334,7 @@ class EmbeddingService:
         stmt = (
             select(
                 MetricEmbedding.metric_def_id,
+                MetricEmbedding.indexed_text,
                 MetricDef.code,
                 MetricDef.name,
                 MetricDef.name_ru,
@@ -306,6 +359,7 @@ class EmbeddingService:
                     "name": row.name,
                     "name_ru": row.name_ru,
                     "description": row.description,
+                    "indexed_text": row.indexed_text,
                     "similarity": round(similarity, 4),
                 })
 
@@ -318,6 +372,68 @@ class EmbeddingService:
                 "threshold": threshold,
             },
         )
+
+        return matches
+
+    async def find_similar_by_embedding(
+        self,
+        query_embedding: list[float],
+        top_k: int | None = None,
+        threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Find metrics similar to the given embedding vector.
+
+        Same as find_similar but takes a pre-computed embedding instead of text.
+        This allows batch processing where embeddings are generated once for multiple queries.
+
+        Args:
+            query_embedding: Pre-computed embedding vector (e.g., 1536 dimensions)
+            top_k: Number of results to return (default from settings)
+            threshold: Minimum similarity score (default from settings)
+
+        Returns:
+            List of dicts with metric info and similarity scores
+        """
+        if top_k is None:
+            top_k = settings.embedding_top_k
+        if threshold is None:
+            threshold = settings.embedding_similarity_threshold
+
+        # Vector search using pgvector
+        from sqlalchemy.sql import func
+
+        stmt = (
+            select(
+                MetricEmbedding.metric_def_id,
+                MetricEmbedding.indexed_text,
+                MetricDef.code,
+                MetricDef.name,
+                MetricDef.name_ru,
+                MetricDef.description,
+                (1 - MetricEmbedding.embedding.cosine_distance(query_embedding)).label("similarity"),
+            )
+            .join(MetricDef, MetricDef.id == MetricEmbedding.metric_def_id)
+            .where(MetricDef.moderation_status == "APPROVED")
+            .order_by(MetricEmbedding.embedding.cosine_distance(query_embedding))
+            .limit(top_k)
+        )
+
+        result = await self.db.execute(stmt)
+
+        matches = []
+        for row in result.all():
+            similarity = float(row.similarity)
+            if similarity >= threshold:
+                matches.append({
+                    "metric_def_id": row.metric_def_id,
+                    "code": row.code,
+                    "name": row.name,
+                    "name_ru": row.name_ru,
+                    "description": row.description,
+                    "indexed_text": row.indexed_text,
+                    "similarity": round(similarity, 4),
+                })
 
         return matches
 
