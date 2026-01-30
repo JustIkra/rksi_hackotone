@@ -85,3 +85,21 @@ class TestPromptLoader:
 
         result = loader.load("reloadable")
         assert result == {"value": 2}
+
+
+def test_report_pdf_extraction_has_output_schema():
+    """report-pdf-extraction.json must have output_schema for structured outputs."""
+    from app.core.prompt_loader import get_prompt_loader
+
+    loader = get_prompt_loader()
+    cfg = loader.load("report-pdf-extraction")
+    assert "output_schema" in cfg
+
+
+def test_metric_mapping_decision_has_output_schema():
+    """metric-mapping-decision.json must have output_schema for structured outputs."""
+    from app.core.prompt_loader import get_prompt_loader
+
+    loader = get_prompt_loader()
+    cfg = loader.load("metric-mapping-decision")
+    assert "output_schema" in cfg

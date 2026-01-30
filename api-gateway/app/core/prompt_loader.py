@@ -17,8 +17,25 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Default prompts directory (relative to project root)
-DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "config" / "prompts"
+# Search paths for prompts directory (in priority order)
+# 1. Docker: /app/config/prompts (COPY config/ /app/config/)
+# 2. Local: project_root/config/prompts (one level above api-gateway)
+_PROMPTS_SEARCH_PATHS = [
+    Path(__file__).parent.parent.parent / "config" / "prompts",  # /app/config/prompts in Docker
+    Path(__file__).parent.parent.parent.parent / "config" / "prompts",  # ../config/prompts locally
+]
+
+
+def _find_prompts_dir() -> Path:
+    """Find the prompts directory from search paths."""
+    for path in _PROMPTS_SEARCH_PATHS:
+        if path.exists():
+            return path
+    # Fallback to first path (will raise error on load if missing)
+    return _PROMPTS_SEARCH_PATHS[0]
+
+
+DEFAULT_PROMPTS_DIR = _find_prompts_dir()
 
 
 class PromptNotFoundError(Exception):
