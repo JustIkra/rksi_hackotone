@@ -139,8 +139,22 @@ class ReportPdfExtractionService:
         Uses RAG mapping to convert labels to metric codes.
         Returns warning info for unmapped/ambiguous metrics.
         """
-        # 1. Extract raw metrics from PDF (label/value pairs)
-        prompt = get_report_pdf_extraction_prompt()
+        # 1. Load metric definitions first (for prompt context and validation)
+        metric_defs = await self.metric_def_repo.list_all(active_only=True)
+        metric_def_by_code = {m.code: m for m in metric_defs}
+
+        # Build metrics context for LLM prompt
+        existing_metrics_context = [
+            {
+                "code": m.code,
+                "name_ru": m.name_ru,
+                "name": m.name,
+            }
+            for m in metric_defs
+        ]
+
+        # 2. Extract raw metrics from PDF (label/value pairs)
+        prompt = get_report_pdf_extraction_prompt(existing_metrics=existing_metrics_context)
         output_schema = get_report_pdf_extraction_schema()
 
         response = await self.ai_client.generate_from_pdf(
@@ -170,10 +184,6 @@ class ReportPdfExtractionService:
             )
         finally:
             await dedup_service.close()
-
-        # 2. Load metric definitions for validation
-        metric_defs = await self.metric_def_repo.list_all(active_only=True)
-        metric_def_by_code = {m.code: m for m in metric_defs}
 
         # 3. Map labels to metric codes using RAG
         rag_service = RagMappingService(self.db, ai_client=self.ai_client)

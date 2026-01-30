@@ -1,6 +1,34 @@
 {
-  "version": "2.0",
+  "version": "2.2",
   "language": "ru",
-  "description": "Промпт для извлечения метрик из PDF (DOCX->PDF) для отчётов участника с RAG mapping",
-  "extraction_prompt": "Проанализируй PDF документ и извлеки ТОЛЬКО метрики с числовым значением 1-10.\n\nВАЖНО:\n- НЕ придумывай значения: бери только явные числа из документа (1-10).\n- НЕ возвращай рекомендации/описания без числа.\n- Ответ — строго JSON без markdown.\n\nВерни JSON формата:\n{\"metrics\":[{\"label\":\"НАЗВАНИЕ МЕТРИКИ КАК В ДОКУМЕНТЕ\",\"value\":\"7.5\",\"evidence\":{\"page_numbers\":[3],\"quotes\":[\"...\"]}}]}"
+  "description": "Извлечение метрик (label/value) из PDF через OpenRouter PDF Inputs (mistral-ocr) для последующего RAG-mapping",
+  "extraction_prompt": "Проанализируй PDF документ (вход получен через OCR) и извлеки ТОЛЬКО метрики с явным числовым значением по шкале 1-10.\n\nЖёсткие правила (OCR-safe):\n- OCR может ошибаться (0/O, 1/I, 5/S, запятая/точка, разрывы строк). Если число/подпись читается НЕоднозначно — НЕ извлекай метрику.\n- НЕ придумывай значения и НЕ восстанавливай «по смыслу»: бери только явно указанные числа 1-10.\n- Извлекай метрики из таблиц, итоговых блоков, списков результатов, подписей к шкалам/диаграммам — только если значение явно присутствует как число.\n- Нормализуй число: 7,5 -> 7.5. Не добавляй единицы измерения и лишний текст.\n\nEvidence обязательно:\n- page_numbers: реальные номера страниц (1-based)\n- quotes: короткие фрагменты OCR-текста, где видны label и value\n{existing_metrics}\nОтвет:\n- строго JSON (без markdown)\n- соответствует output_schema",
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "metrics": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "value": { "type": ["number", "string"] },
+            "evidence": {
+              "type": "object",
+              "properties": {
+                "page_numbers": { "type": "array", "items": { "type": "integer" } },
+                "quotes": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["page_numbers", "quotes"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["label", "value", "evidence"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["metrics"],
+    "additionalProperties": false
+  }
 }
