@@ -389,6 +389,12 @@ class MetricDef(Base):
     ai_rationale: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True, comment="AI extraction rationale (quotes, page_numbers, confidence)"
     )
+    canonical_metric_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("metric_def.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Reference to canonical metric if this is an alias",
+    )
 
     # Relationships
     extracted_metrics: Mapped[list["ExtractedMetric"]] = relationship(
@@ -404,6 +410,12 @@ class MetricDef(Base):
     )
     embedding: Mapped["MetricEmbedding | None"] = relationship(
         "MetricEmbedding", back_populates="metric_def", uselist=False, cascade="all, delete-orphan"
+    )
+    canonical_metric: Mapped["MetricDef | None"] = relationship(
+        "MetricDef",
+        remote_side="MetricDef.id",
+        foreign_keys=[canonical_metric_id],
+        backref="aliases",
     )
 
     # Constraints
@@ -531,11 +543,12 @@ class ParticipantMetric(Base):
 
     Stores the latest confirmed value for each (participant_id, metric_code) pair.
     When a new report is uploaded with the same metric, this record is updated via upsert
-    based on report timestamp priority.
+    using deterministic "best result" priority.
 
     Priority rules:
-    - More recent report.uploaded_at (or created_at) takes precedence
-    - On tie, higher confidence value is preferred
+    - Higher metric value takes precedence
+    - On tie, higher confidence is preferred (NULL treated as 0)
+    - On tie, more recent report.uploaded_at takes precedence
     """
 
     __tablename__ = "participant_metric"

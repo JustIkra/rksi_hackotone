@@ -181,6 +181,39 @@ class Settings(BaseSettings):
         description="Delta threshold for detecting ambiguous matches in RAG",
     )
 
+    # Metric Mapping Decision Settings
+    metric_mapping_top_k: int = Field(
+        default=10,
+        ge=1,
+        description="Number of candidates to retrieve for metric mapping",
+    )
+    metric_mapping_llm_min_confidence: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence for LLM match in metric mapping",
+    )
+
+    # Metric Deduplication Settings
+    metric_dedup_threshold: float = Field(
+        default=0.92,
+        ge=0.0,
+        le=1.0,
+        description="Semantic similarity threshold for pre-extraction deduplication",
+    )
+    rag_candidate_min_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity threshold for RAG candidates",
+    )
+    rag_auto_match_threshold: float = Field(
+        default=0.95,
+        ge=0.0,
+        le=1.0,
+        description="Auto-match threshold (skip LLM if similarity above this)",
+    )
+
     # Computed Properties
     def _parse_comma_separated(self, value: str) -> list[str]:
         """Helper to parse comma-separated strings."""
