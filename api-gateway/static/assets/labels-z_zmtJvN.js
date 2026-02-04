@@ -1,0 +1,1 @@
+const S={ADMIN:"Администратор",USER:"Пользователь",SUPERVISOR:"Супервайзер",ANALYST:"Аналитик"},t={ACTIVE:"Активен",PENDING:"Ожидает",BLOCKED:"Заблокирован"},E={ADMIN:"primary",USER:"",SUPERVISOR:"warning",ANALYST:"info"};function e(n){return S[n]||n}function A(n){return t[n]||n}function L(n){return E[n]||""}export{e as a,L as b,A as g};
