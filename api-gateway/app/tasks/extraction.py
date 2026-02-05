@@ -118,12 +118,12 @@ def _run_coroutine_blocking(coro: Coroutine[Any, Any, Any]) -> Any:
 )
 def extract_metrics_from_report_pdf(self, report_id: str, request_id: str | None = None) -> dict:
     """
-    Extract metrics from a DOCX report using PDF-based LLM extraction.
+    Extract metrics from a DOCX or PDF report using LLM extraction.
 
     This task:
     1. Loads the report from database
-    2. Reads DOCX file from storage
-    3. Converts DOCX to PDF using LibreOffice
+    2. Reads file from storage (DOCX or PDF)
+    3. Converts DOCX to PDF if needed (PDF files are used directly)
     4. Sends PDF to LLM for metric extraction
     5. Saves extracted metrics to database
     6. Updates report status to EXTRACTED or FAILED
@@ -173,7 +173,7 @@ def extract_metrics_from_report_pdf(self, report_id: str, request_id: str | None
                         "reason": f"Report status is {report.status}, expected UPLOADED or PROCESSING",
                     }
 
-                # 2. Get file path and read DOCX bytes
+                # 2. Get file path and read file bytes
                 storage = LocalReportStorage(settings.file_storage_base)
                 file_path = storage.resolve_path(report.file_ref.key)
 
@@ -184,18 +184,30 @@ def extract_metrics_from_report_pdf(self, report_id: str, request_id: str | None
                     )
                     raise FileNotFoundError(f"Report file not found: {file_path}")
 
-                docx_bytes = file_path.read_bytes()
+                file_bytes = file_path.read_bytes()
                 logger.info(
-                    "task_report_docx_loaded",
-                    extra={"report_id": report_id, "size_bytes": len(docx_bytes)},
+                    "task_report_file_loaded",
+                    extra={"report_id": report_id, "size_bytes": len(file_bytes)},
                 )
 
-                # 3. Convert DOCX to PDF
-                pdf_bytes = convert_docx_bytes_to_pdf_bytes(docx_bytes)
-                logger.info(
-                    "task_report_pdf_converted",
-                    extra={"report_id": report_id, "pdf_size_bytes": len(pdf_bytes)},
+                # 3. Get PDF bytes (convert DOCX if needed, or use PDF directly)
+                is_pdf = (
+                    "pdf" in (report.file_ref.mime or "").lower()
+                    or str(file_path).lower().endswith(".pdf")
                 )
+
+                if is_pdf:
+                    pdf_bytes = file_bytes
+                    logger.info(
+                        "task_report_pdf_direct",
+                        extra={"report_id": report_id, "pdf_size_bytes": len(pdf_bytes)},
+                    )
+                else:
+                    pdf_bytes = convert_docx_bytes_to_pdf_bytes(file_bytes)
+                    logger.info(
+                        "task_report_pdf_converted",
+                        extra={"report_id": report_id, "pdf_size_bytes": len(pdf_bytes)},
+                    )
 
                 # 4. Extract metrics using PDF LLM extraction
                 ai_client = create_ai_client()

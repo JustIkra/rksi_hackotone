@@ -35,11 +35,16 @@ class ReportDownloadContext:
 class ReportService:
     """Business logic for report management."""
 
+    ALLOWED_EXTENSIONS = {".docx", ".pdf"}
     ALLOWED_MIME_TYPES = {
+        # DOCX
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword",
+        # PDF
+        "application/pdf",
+        "application/x-pdf",
     }
-    DEFAULT_FILENAME = "original.docx"
+    DEFAULT_FILENAME = "report"
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -163,20 +168,33 @@ class ReportService:
                 detail=f"Failed to read report file: {exc}",
             ) from exc
 
+        # Use original filename if available, otherwise construct from mime type
+        filename = report.file_ref.filename
+        if not filename:
+            ext = ".pdf" if "pdf" in report.file_ref.mime.lower() else ".docx"
+            filename = f"{self.DEFAULT_FILENAME}{ext}"
+
         return ReportDownloadContext(
             report=report,
             path=path,
             mime=report.file_ref.mime,
             etag=etag,
-            filename=self.DEFAULT_FILENAME,
+            filename=filename,
         )
 
     async def _validate_file(self, upload: UploadFile) -> None:
         """Validate incoming upload for MIME type and filename."""
-        if upload.filename is None or not upload.filename.lower().endswith(".docx"):
+        if upload.filename is None:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Only .docx files are supported",
+                detail="Filename is required",
+            )
+
+        filename_lower = upload.filename.lower()
+        if not any(filename_lower.endswith(ext) for ext in self.ALLOWED_EXTENSIONS):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Only .docx and .pdf files are supported",
             )
 
         content_type = (upload.content_type or "").lower()
