@@ -245,7 +245,12 @@ class OpenRouterClient:
                 )
                 return response
 
-            except (OpenRouterRateLimitError, OpenRouterServerError, OpenRouterTimeoutError) as e:
+            except (
+                OpenRouterRateLimitError,
+                OpenRouterServerError,
+                OpenRouterTimeoutError,
+                OpenRouterClientError,  # Network errors (connection refused, DNS, etc.)
+            ) as e:
                 last_error = e
                 if attempt < self.max_retries - 1:
                     # Calculate backoff
@@ -260,6 +265,7 @@ class OpenRouterClient:
                             "attempt": attempt + 1,
                             "max_retries": self.max_retries,
                             "delay_s": delay,
+                            "error_type": type(e).__name__,
                             "error": str(e),
                         },
                     )
@@ -593,7 +599,12 @@ class OpenRouterClient:
 
                 return response
 
-            except (OpenRouterRateLimitError, OpenRouterServerError, OpenRouterTimeoutError) as e:
+            except (
+                OpenRouterRateLimitError,
+                OpenRouterServerError,
+                OpenRouterTimeoutError,
+                OpenRouterClientError,  # Network errors
+            ) as e:
                 last_error = e
                 if attempt < self.max_retries - 1:
                     if isinstance(e, OpenRouterRateLimitError) and e.retry_after:
@@ -607,6 +618,7 @@ class OpenRouterClient:
                             "attempt": attempt + 1,
                             "max_retries": self.max_retries,
                             "delay_s": delay,
+                            "error_type": type(e).__name__,
                             "error": str(e),
                         },
                     )
