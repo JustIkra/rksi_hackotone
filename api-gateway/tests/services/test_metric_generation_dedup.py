@@ -275,3 +275,126 @@ class TestDuplicateScenarios:
         # This is why we use RAG + LLM instead of just exact matching
         for name in names:
             assert normalize_name(name)  # All should be valid
+
+
+class TestCategoryFallbackBug:
+    """
+    Tests for the category fallback bug fix.
+
+    Issue: When RAG returns no candidates (similarity below threshold),
+    the code was falling back to category-based candidates with similarity=0.0
+    and asking LLM to match against these unrelated metrics.
+
+    Fix: Don't use category fallback for semantic matching. If RAG finds
+    nothing, return None so a new metric can be created.
+
+    See: docs/issues/2026-02-05-metric-generation-no-new-metrics.md
+    """
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_no_rag_candidates_returns_none(self):
+        """
+        When RAG returns no candidates, match_metric_semantic should return None.
+
+        This ensures that unknown metrics are created as PENDING instead of
+        being incorrectly matched to unrelated metrics from the same category.
+
+        BUG DEMONSTRATION: Before the fix, this test would fail because
+        the category fallback would find metrics from the same category
+        and the LLM would incorrectly match against them.
+
+        AFTER FIX: When RAG returns empty, function returns None immediately
+        without using category fallback, allowing new metrics to be created.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.services.metric_generation import MetricGenerationService
+
+        # Create service with mocked dependencies
+        mock_db = AsyncMock()
+        mock_redis = MagicMock()
+        mock_embedding_service = AsyncMock()
+
+        # Mock embedding service to return NO candidates (simulating low similarity)
+        mock_embedding_service.find_similar = AsyncMock(return_value=[])
+
+        with patch("app.services.metric_generation.OpenRouterClient"):
+            service = MetricGenerationService(
+                db=mock_db,
+                redis=mock_redis,
+            )
+            service.embedding_service = mock_embedding_service
+
+        extracted = ExtractedMetricData(
+            name="Интернальность",  # This metric doesn't exist in DB
+            description="Тест метрика",
+            category="Психологические",
+        )
+
+        # Before fix: this would call _get_category_fallback_candidates and
+        # potentially return a false match from the same category.
+        # After fix: this should return None immediately.
+        result, similarity = await service.match_metric_semantic(extracted)
+
+        assert result is None, (
+            "Expected None when RAG returns no candidates. "
+            "Bug: category fallback was causing false matches."
+        )
+        assert similarity == 0.0
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_low_similarity_candidates_with_llm_unknown(self):
+        """
+        When all candidates have low similarity and LLM returns 'unknown',
+        match_metric_semantic should return None.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from app.services.metric_generation import MetricGenerationService
+
+        mock_db = AsyncMock()
+        mock_redis = MagicMock()
+        mock_embedding_service = AsyncMock()
+
+        # Mock embedding service to return low-similarity candidates
+        mock_embedding_service.find_similar = AsyncMock(return_value=[
+            {
+                "metric_def_id": "uuid-1",
+                "code": "some_unrelated",
+                "name": "Unrelated Metric",
+                "name_ru": "Несвязанная метрика",
+                "similarity": 0.35,  # Low but above threshold
+                "indexed_text": "Some unrelated metric",
+            }
+        ])
+
+        with patch("app.services.metric_generation.OpenRouterClient"):
+            service = MetricGenerationService(
+                db=mock_db,
+                redis=mock_redis,
+            )
+            service.embedding_service = mock_embedding_service
+
+        extracted = ExtractedMetricData(
+            name="Сила личности",
+            description="Уникальная метрика",
+            category="Личностные",
+        )
+
+        # Mock LLM to return "unknown" decision
+        mock_ai_client = AsyncMock()
+        mock_ai_client.generate_text = AsyncMock(return_value={
+            "choices": [{
+                "message": {
+                    "content": '{"decision": "unknown", "metric_code": null, "confidence": 0.3, "reason": "Метрика концептуально отличается от всех кандидатов"}'
+                }
+            }]
+        })
+        mock_ai_client.close = AsyncMock()
+
+        # Patch at the correct module level where create_ai_client is imported
+        with patch("app.core.ai_factory.create_ai_client", return_value=mock_ai_client):
+            result, similarity = await service.match_metric_semantic(extracted)
+
+        assert result is None
+        assert similarity == 0.0

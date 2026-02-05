@@ -805,22 +805,15 @@ class MetricGenerationService:
             return None, 0.0
 
         if not candidates:
-            # Second chance: try LLM with metrics from same category
-            candidates = await self._get_category_fallback_candidates(extracted)
-            if not candidates:
-                logger.debug(
-                    "no_candidates_even_with_fallback",
-                    extra={"extracted_name": extracted.name, "category": extracted.category},
-                )
-                return None, 0.0
+            # No similar metrics found - return None to trigger new metric creation.
+            # NOTE: Previously used category fallback here, but this caused false matches
+            # because LLM would match against unrelated metrics from the same category.
+            # See: docs/issues/2026-02-05-metric-generation-no-new-metrics.md
             logger.debug(
-                "using_category_fallback_candidates",
-                extra={
-                    "extracted_name": extracted.name,
-                    "category": extracted.category,
-                    "candidate_count": len(candidates),
-                },
+                "no_rag_candidates_returning_none",
+                extra={"extracted_name": extracted.name, "category": extracted.category},
             )
+            return None, 0.0
 
         # Auto-match: if top candidate has very high similarity (>= 0.95), skip LLM
         auto_match_threshold = settings.rag_auto_match_threshold  # 0.95
