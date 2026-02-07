@@ -1,18 +1,15 @@
 """
 Repository layer for professional activities.
 
-Provides read operations and idempotent seed insertion helpers.
+Provides CRUD operations for prof_activity table.
 """
 
-from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ProfActivity, WeightTable
-from app.db.seeds.prof_activity import ProfActivitySeed
 
 
 class ProfActivityRepository:
@@ -131,29 +128,3 @@ class ProfActivityRepository:
         await self.db.commit()
         return True
 
-    async def seed_defaults(self, seeds: Sequence[ProfActivitySeed]) -> None:
-        """
-        Upsert default professional activities.
-
-        Each seed is inserted once and subsequent runs update name/description only.
-        """
-        for seed in seeds:
-            stmt = (
-                insert(ProfActivity)
-                .values(
-                    id=seed.id,
-                    code=seed.code,
-                    name=seed.name,
-                    description=seed.description,
-                )
-                .on_conflict_do_update(
-                    index_elements=[ProfActivity.code],
-                    set_={
-                        "name": seed.name,
-                        "description": seed.description,
-                    },
-                )
-            )
-            await self.db.execute(stmt)
-
-        await self.db.commit()

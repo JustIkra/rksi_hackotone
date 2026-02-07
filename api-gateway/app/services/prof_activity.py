@@ -8,7 +8,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.seeds import PROF_ACTIVITY_SEED_DATA
 from app.repositories.prof_activity import ProfActivityRepository
 from app.schemas.prof_activity import (
     ProfActivityCreateRequest,
@@ -96,6 +95,3 @@ class ProfActivityService:
         if not success:
             raise ValueError("Professional activity not found")
 
-    async def seed_defaults(self) -> None:
-        """Seed default professional activities in idempotent manner."""
-        await self.repo.seed_defaults(PROF_ACTIVITY_SEED_DATA)

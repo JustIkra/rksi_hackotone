@@ -8,14 +8,12 @@ Loads configuration from ROOT .env file.
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from decimal import Decimal
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings, validate_config
 from app.core.middleware import RequestContextMiddleware
@@ -47,79 +45,6 @@ async def lifespan(app: FastAPI):
 
     # Validate configuration
     validate_config()
-
-    # TODO: Initialize database connection pool
-    # TODO: Initialize Redis connection
-    # TODO: Initialize Celery client
-
-    # Auto-seed MetricDef if table is empty (works in all environments)
-    # This ensures metrics are available even in production if database is fresh
-    try:
-        from app.core.config import settings as app_settings
-        from app.db.session import AsyncSessionLocal
-        from app.repositories.metric import MetricDefRepository
-        from app.services.metric_mapping import MetricMappingService
-        from app.services.metric_localization import get_metric_display_name_ru
-
-        async with AsyncSessionLocal() as db_session:  # type: AsyncSession
-            metric_repo = MetricDefRepository(db_session)
-            existing_metrics = await metric_repo.list_all(active_only=False)
-            if not existing_metrics:
-                logger.info("metric_defs_seeding_started", extra={"event": "seed_start", "env": app_settings.env})
-                mapping_service = MetricMappingService()
-                mapping_service.load()
-                # Unified mapping: get all metric codes from the single header_map
-                all_codes: set[str] = set(mapping_service.get_all_mappings().values())
-                created = 0
-                for code in sorted(all_codes):
-                    name = code.replace("_", " ").title()
-                    name_ru = get_metric_display_name_ru(code)
-                    await metric_repo.create(
-                        code=code,
-                        name=name,
-                        name_ru=name_ru or name,
-                        description=None,
-                        unit="балл",
-                        min_value=Decimal("1"),
-                        max_value=Decimal("10"),
-                        active=True,
-                    )
-                    created += 1
-                logger.info(
-                    "metric_defs_seeded",
-                    extra={"event": "seed_complete", "created_count": created, "env": app_settings.env},
-                )
-            else:
-                missing_localized = 0
-                for metric in existing_metrics:
-                    if not metric.name_ru or not metric.name_ru.strip():
-                        name_ru = get_metric_display_name_ru(metric.code)
-                        if name_ru:
-                            metric.name_ru = name_ru
-                            missing_localized += 1
-
-                if missing_localized:
-                    await db_session.commit()
-                    logger.info(
-                        "metric_defs_localized",
-                        extra={
-                            "event": "seed_localize",
-                            "updated_count": missing_localized,
-                            "env": app_settings.env,
-                        },
-                    )
-                else:
-                    logger.debug(
-                        "metric_defs_already_exist",
-                        extra={
-                            "event": "seed_skip",
-                            "count": len(existing_metrics),
-                            "env": app_settings.env,
-                        },
-                    )
-    except Exception as exc:  # noqa: BLE001
-        # Do not fail startup; log and continue
-        logger.exception("metric_defs_seeding_failed", extra={"error": str(exc)})
 
     logger.info("application_ready", extra={"event": "ready", "port": settings.app_port})
 
