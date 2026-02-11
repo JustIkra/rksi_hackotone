@@ -68,6 +68,8 @@ class DepartmentResponse(BaseModel):
     description: str | None
     created_at: datetime
     participants_count: int = 0
+    weight_table_id: UUID | None = None
+    weight_table_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -85,3 +87,24 @@ class AttachParticipantsRequest(BaseModel):
 
 class DetachParticipantRequest(BaseModel):
     participant_id: UUID
+
+
+# --- Weight table attachment ---
+
+class AttachWeightTableRequest(BaseModel):
+    weight_table_id: UUID | None = None
+
+
+class ParticipantWithSuitabilityResponse(BaseModel):
+    id: UUID
+    full_name: str
+    birth_date: datetime | None = None
+    external_id: str | None = None
+    department_id: UUID | None = None
+    created_at: datetime
+    suitability_pct: float | None = None
+    final_score: float | None = None
+    has_metrics: bool = False
+    metrics_coverage: float | None = None
+
+    model_config = {"from_attributes": True}

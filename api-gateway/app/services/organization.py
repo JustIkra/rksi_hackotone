@@ -2,15 +2,20 @@
 Service layer for Organization and Department business logic.
 """
 
+import logging
 from math import ceil
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import Department
 from app.repositories.organization import DepartmentRepository, OrganizationRepository
+from app.repositories.scoring_result import ScoringResultRepository
+from app.repositories.weight_table import WeightTableRepository
 from app.schemas.organization import (
     AttachParticipantsRequest,
+    AttachWeightTableRequest,
     DepartmentCreateRequest,
     DepartmentListResponse,
     DepartmentResponse,
@@ -20,7 +25,10 @@ from app.schemas.organization import (
     OrganizationListResponse,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    ParticipantWithSuitabilityResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OrganizationService:
@@ -56,16 +64,7 @@ class OrganizationService:
         dept_responses = []
         for dept in org.departments:
             count = await self.dept_repo.get_participants_count(dept.id)
-            dept_responses.append(
-                DepartmentResponse(
-                    id=dept.id,
-                    organization_id=dept.organization_id,
-                    name=dept.name,
-                    description=dept.description,
-                    created_at=dept.created_at,
-                    participants_count=count,
-                )
-            )
+            dept_responses.append(self._build_dept_response(dept, count))
         dept_responses.sort(key=lambda d: d.name)
 
         return OrganizationDetailResponse(
@@ -145,14 +144,7 @@ class OrganizationService:
         dept = await self.dept_repo.create(
             organization_id=org_id, name=request.name, description=request.description
         )
-        return DepartmentResponse(
-            id=dept.id,
-            organization_id=dept.organization_id,
-            name=dept.name,
-            description=dept.description,
-            created_at=dept.created_at,
-            participants_count=0,
-        )
+        return self._build_dept_response(dept, 0)
 
     async def list_departments(self, org_id: UUID) -> DepartmentListResponse:
         org = await self.org_repo.get_by_id(org_id)
@@ -163,16 +155,7 @@ class OrganizationService:
         items = []
         for dept in depts:
             count = await self.dept_repo.get_participants_count(dept.id)
-            items.append(
-                DepartmentResponse(
-                    id=dept.id,
-                    organization_id=dept.organization_id,
-                    name=dept.name,
-                    description=dept.description,
-                    created_at=dept.created_at,
-                    participants_count=count,
-                )
-            )
+            items.append(self._build_dept_response(dept, count))
         return DepartmentListResponse(items=items, total=len(items))
 
     async def update_department(
@@ -190,14 +173,7 @@ class OrganizationService:
 
         dept = await self.dept_repo.update(dept, name=request.name, description=request.description)
         count = await self.dept_repo.get_participants_count(dept.id)
-        return DepartmentResponse(
-            id=dept.id,
-            organization_id=dept.organization_id,
-            name=dept.name,
-            description=dept.description,
-            created_at=dept.created_at,
-            participants_count=count,
-        )
+        return self._build_dept_response(dept, count)
 
     async def delete_department(self, org_id: UUID, dept_id: UUID) -> None:
         dept = await self._get_department_in_org(org_id, dept_id)
@@ -224,7 +200,135 @@ class OrganizationService:
                 detail="Участник не найден или не привязан к этому отделу",
             )
 
+    # --- Weight table ---
+
+    async def attach_weight_table(
+        self, org_id: UUID, dept_id: UUID, request: AttachWeightTableRequest
+    ) -> DepartmentResponse:
+        dept = await self._get_department_in_org(org_id, dept_id)
+
+        if request.weight_table_id is not None:
+            wt_repo = WeightTableRepository(self.db)
+            wt = await wt_repo.get_by_id(request.weight_table_id)
+            if not wt:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Весовая таблица не найдена",
+                )
+
+        dept = await self.dept_repo.set_weight_table(dept, request.weight_table_id)
+        count = await self.dept_repo.get_participants_count(dept.id)
+        return self._build_dept_response(dept, count)
+
+    async def list_department_participants_with_scores(
+        self, org_id: UUID, dept_id: UUID
+    ) -> list[ParticipantWithSuitabilityResponse]:
+        dept = await self._get_department_in_org(org_id, dept_id)
+        participants = await self.dept_repo.list_participants(dept_id)
+
+        if not dept.weight_table_id or not participants:
+            return [
+                ParticipantWithSuitabilityResponse(
+                    id=p.id,
+                    full_name=p.full_name,
+                    birth_date=p.birth_date,
+                    external_id=p.external_id,
+                    department_id=p.department_id,
+                    created_at=p.created_at,
+                )
+                for p in participants
+            ]
+
+        # Batch fetch scoring results
+        sr_repo = ScoringResultRepository(self.db)
+        pids = [p.id for p in participants]
+        scores_map = await sr_repo.list_by_participants_and_weight_table(pids, dept.weight_table_id)
+
+        # Get weight table to compute coverage
+        wt_repo = WeightTableRepository(self.db)
+        wt = await wt_repo.get_by_id(dept.weight_table_id)
+        wt_metric_codes = {w["metric_code"] for w in wt.weights} if wt else set()
+        total_wt_metrics = len(wt_metric_codes)
+
+        # Batch fetch participant metrics for coverage
+        from app.repositories.participant_metric import ParticipantMetricRepository
+        pm_repo = ParticipantMetricRepository(self.db)
+
+        results = []
+        for p in participants:
+            sr = scores_map.get(p.id)
+            p_metrics = await pm_repo.get_metrics_dict(p.id)
+            has_metrics = len(p_metrics) > 0
+
+            metrics_coverage = None
+            if total_wt_metrics > 0 and has_metrics:
+                covered = sum(1 for mc in wt_metric_codes if mc in p_metrics)
+                metrics_coverage = round(covered / total_wt_metrics * 100, 1)
+
+            suitability_pct = None
+            final_score = None
+            if sr:
+                final_score = float(sr.final_score)
+                suitability_pct = round(final_score / 10 * 100, 1)
+
+            results.append(ParticipantWithSuitabilityResponse(
+                id=p.id,
+                full_name=p.full_name,
+                birth_date=p.birth_date,
+                external_id=p.external_id,
+                department_id=p.department_id,
+                created_at=p.created_at,
+                suitability_pct=suitability_pct,
+                final_score=final_score,
+                has_metrics=has_metrics,
+                metrics_coverage=metrics_coverage,
+            ))
+        return results
+
+    async def calculate_department_scores(
+        self, org_id: UUID, dept_id: UUID
+    ) -> dict:
+        dept = await self._get_department_in_org(org_id, dept_id)
+        if not dept.weight_table_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="К отделу не привязана весовая таблица",
+            )
+
+        participants = await self.dept_repo.list_participants(dept_id)
+        from app.services.scoring import ScoringService
+        scoring_svc = ScoringService(self.db)
+
+        calculated = 0
+        errors = []
+        for p in participants:
+            try:
+                await scoring_svc.calculate_score(p.id, dept.weight_table_id)
+                calculated += 1
+            except Exception as e:
+                logger.error(f"Score calc error for participant {p.id}: {e}")
+                errors.append({"participant_id": str(p.id), "error": str(e)})
+
+        return {"calculated": calculated, "errors": errors}
+
     # --- helpers ---
+
+    def _build_dept_response(self, dept: Department, participants_count: int) -> DepartmentResponse:
+        wt_name = None
+        if dept.weight_table_id:
+            wt = getattr(dept, "weight_table", None)
+            if wt and getattr(wt, "prof_activity", None):
+                wt_name = wt.prof_activity.name
+        return DepartmentResponse(
+            id=dept.id,
+            organization_id=dept.organization_id,
+            name=dept.name,
+            description=dept.description,
+            created_at=dept.created_at,
+            participants_count=participants_count,
+            weight_table_id=dept.weight_table_id,
+            weight_table_name=wt_name,
+        )
 
     async def _get_department_in_org(self, org_id: UUID, dept_id: UUID):
         dept = await self.dept_repo.get_by_id(dept_id)

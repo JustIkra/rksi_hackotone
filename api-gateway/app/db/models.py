@@ -108,6 +108,9 @@ class Department(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weight_table_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("weight_table.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default="now()"
     )
@@ -116,10 +119,12 @@ class Department(Base):
     participants: Mapped[list["Participant"]] = relationship(
         "Participant", back_populates="department"
     )
+    weight_table: Mapped["WeightTable | None"] = relationship("WeightTable")
 
     __table_args__ = (
         UniqueConstraint("organization_id", "name", name="uq_department_org_name"),
         Index("ix_department_organization_id", "organization_id"),
+        Index("ix_department_weight_table_id", "weight_table_id"),
     )
 
     def __repr__(self) -> str:

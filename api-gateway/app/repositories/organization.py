@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.db.models import Department, Organization, Participant
+from app.db.models import Department, Organization, Participant, WeightTable, ProfActivity
 
 
 class OrganizationRepository:
@@ -29,7 +29,11 @@ class OrganizationRepository:
     async def get_by_id_with_departments(self, org_id: UUID) -> Organization | None:
         result = await self.db.execute(
             select(Organization)
-            .options(selectinload(Organization.departments))
+            .options(
+                selectinload(Organization.departments)
+                .selectinload(Department.weight_table)
+                .selectinload(WeightTable.prof_activity)
+            )
             .where(Organization.id == org_id)
         )
         return result.scalar_one_or_none()
@@ -97,12 +101,21 @@ class DepartmentRepository:
         return dept
 
     async def get_by_id(self, dept_id: UUID) -> Department | None:
-        result = await self.db.execute(select(Department).where(Department.id == dept_id))
+        result = await self.db.execute(
+            select(Department)
+            .options(
+                selectinload(Department.weight_table).selectinload(WeightTable.prof_activity)
+            )
+            .where(Department.id == dept_id)
+        )
         return result.scalar_one_or_none()
 
     async def list_by_organization(self, org_id: UUID) -> list[Department]:
         result = await self.db.execute(
             select(Department)
+            .options(
+                selectinload(Department.weight_table).selectinload(WeightTable.prof_activity)
+            )
             .where(Department.organization_id == org_id)
             .order_by(Department.name)
         )
@@ -158,6 +171,12 @@ class DepartmentRepository:
                 count += 1
         await self.db.commit()
         return count
+
+    async def set_weight_table(self, dept: Department, weight_table_id: UUID | None) -> Department:
+        dept.weight_table_id = weight_table_id
+        await self.db.commit()
+        await self.db.refresh(dept, attribute_names=["weight_table"])
+        return dept
 
     async def detach_participant(self, participant_id: UUID) -> bool:
         result = await self.db.execute(

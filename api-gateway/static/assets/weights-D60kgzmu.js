@@ -1,0 +1,1 @@
+import{O as t}from"./index-CLa57XdF.js";const o={async upload(s){return(await t.post("/admin/weights/upload",s)).data},async update(s,a){return(await t.put(`/admin/weights/${s}`,a)).data},async list(s=null){const a=s?{prof_activity_code:s}:{};return(await t.get("/admin/weights",{params:a})).data}};export{o as w};

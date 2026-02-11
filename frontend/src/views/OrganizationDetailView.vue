@@ -88,8 +88,30 @@
                 <el-tag size="small" type="info">
                   {{ dept.participants_count }} уч.
                 </el-tag>
+                <el-tag
+                  v-if="dept.weight_table_name"
+                  size="small"
+                  type="success"
+                >
+                  {{ dept.weight_table_name }}
+                </el-tag>
+                <el-tag
+                  v-else
+                  size="small"
+                  type="info"
+                  effect="plain"
+                >
+                  Нет весовой таблицы
+                </el-tag>
               </div>
               <div class="dept-actions">
+                <el-button
+                  size="small"
+                  plain
+                  @click="openWeightTableDialog(dept)"
+                >
+                  Весовая таблица
+                </el-button>
                 <el-button
                   size="small"
                   type="primary"
@@ -126,6 +148,18 @@
               v-loading="loadingParticipants[dept.id]"
               class="dept-participants"
             >
+              <!-- Calculate scores button -->
+              <div v-if="dept.weight_table_id" class="scores-toolbar">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="calculatingScores[dept.id]"
+                  @click="handleCalculateScores(dept)"
+                >
+                  Рассчитать соответствие
+                </el-button>
+              </div>
+
               <el-empty
                 v-if="!deptParticipants[dept.id]?.length"
                 description="Нет участников"
@@ -137,6 +171,7 @@
                 :data="deptParticipants[dept.id]"
                 size="small"
                 stripe
+                :default-sort="dept.weight_table_id ? { prop: 'suitability_pct', order: 'descending' } : {}"
               >
                 <el-table-column
                   label="ФИО"
@@ -156,6 +191,43 @@
                   label="Внешний ID"
                   width="150"
                 />
+                <el-table-column
+                  v-if="dept.weight_table_id"
+                  label="Соответствие"
+                  prop="suitability_pct"
+                  width="180"
+                  sortable
+                >
+                  <template #default="{ row }">
+                    <template v-if="!row.has_metrics">
+                      <el-tag size="small" type="info">Нет данных</el-tag>
+                    </template>
+                    <template v-else-if="row.suitability_pct == null">
+                      <el-tag size="small" type="warning">Не рассчитано</el-tag>
+                    </template>
+                    <template v-else>
+                      <el-progress
+                        :percentage="row.suitability_pct"
+                        :color="getSuitabilityColor(row.suitability_pct)"
+                        :stroke-width="14"
+                        :text-inside="true"
+                        :format="(pct) => pct.toFixed(1) + '%'"
+                      />
+                    </template>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="dept.weight_table_id"
+                  label="Покрытие"
+                  prop="metrics_coverage"
+                  width="120"
+                  sortable
+                >
+                  <template #default="{ row }">
+                    <span v-if="row.metrics_coverage != null">{{ row.metrics_coverage }}%</span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
                 <el-table-column
                   label=""
                   width="240"
@@ -319,6 +391,54 @@
         </template>
       </el-dialog>
 
+      <!-- Weight Table Selection Dialog -->
+      <el-dialog
+        v-model="showWeightTableDialog"
+        title="Весовая таблица"
+        :width="isMobile ? '95%' : '500px'"
+      >
+        <p style="margin-bottom: 16px; color: var(--color-text-secondary)">
+          Выберите весовую таблицу для отдела "{{ weightTableDept?.name }}"
+        </p>
+        <el-select
+          v-model="selectedWeightTableId"
+          placeholder="Выберите весовую таблицу"
+          filterable
+          clearable
+          style="width: 100%"
+          :loading="loadingWeightTables"
+        >
+          <el-option
+            v-for="wt in weightTableOptions"
+            :key="wt.id"
+            :label="wt.prof_activity_name"
+            :value="wt.id"
+          />
+        </el-select>
+        <template #footer>
+          <el-button
+            v-if="weightTableDept?.weight_table_id"
+            type="danger"
+            plain
+            :loading="saving"
+            @click="handleDetachWeightTable"
+          >
+            Отвязать
+          </el-button>
+          <el-button @click="showWeightTableDialog = false">
+            Отмена
+          </el-button>
+          <el-button
+            type="primary"
+            :loading="saving"
+            :disabled="!selectedWeightTableId"
+            @click="handleAttachWeightTable"
+          >
+            Сохранить
+          </el-button>
+        </template>
+      </el-dialog>
+
       <!-- Add Participant to Department Drawer -->
       <el-drawer
         v-model="showAddParticipantDrawer"
@@ -444,7 +564,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, ArrowRight } from '@element-plus/icons-vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { organizationsApi } from '@/api'
+import { organizationsApi, weightsApi } from '@/api'
 import { participantsApi } from '@/api'
 import { formatDate } from '@/utils/dateFormat'
 import { useResponsive } from '@/composables/useResponsive'
@@ -461,6 +581,7 @@ const organization = ref(null)
 const expandedDepts = ref({})
 const deptParticipants = ref({})
 const loadingParticipants = ref({})
+const calculatingScores = ref({})
 
 // Edit org
 const showEditDialog = ref(false)
@@ -487,6 +608,13 @@ const showEditDeptDialog = ref(false)
 const editDeptFormRef = ref(null)
 const editDeptForm = reactive({ id: null, name: '', description: '' })
 
+// Weight table dialog
+const showWeightTableDialog = ref(false)
+const weightTableDept = ref(null)
+const selectedWeightTableId = ref(null)
+const weightTableOptions = ref([])
+const loadingWeightTables = ref(false)
+
 // Add participant drawer
 const showAddParticipantDrawer = ref(false)
 const addParticipantTab = ref('existing')
@@ -505,6 +633,13 @@ const newParticipantRules = {
     { required: true, message: 'Введите ФИО', trigger: 'blur' },
     { min: 1, max: 255, message: 'От 1 до 255 символов', trigger: 'blur' }
   ]
+}
+
+const getSuitabilityColor = (pct) => {
+  if (pct >= 80) return '#67C23A'
+  if (pct >= 60) return '#E6A23C'
+  if (pct >= 40) return '#F56C6C'
+  return '#909399'
 }
 
 const loadOrganization = async () => {
@@ -606,6 +741,84 @@ const confirmDeleteDept = (dept) => {
   }).catch(() => {})
 }
 
+// --- Weight table ---
+
+const openWeightTableDialog = async (dept) => {
+  weightTableDept.value = dept
+  selectedWeightTableId.value = dept.weight_table_id || null
+  showWeightTableDialog.value = true
+  loadingWeightTables.value = true
+  try {
+    const data = await weightsApi.list()
+    weightTableOptions.value = (data.items || data).map(wt => ({
+      id: wt.id,
+      prof_activity_name: wt.prof_activity_name || wt.prof_activity?.name || 'Без названия'
+    }))
+  } catch {
+    weightTableOptions.value = []
+    ElMessage.error('Ошибка загрузки весовых таблиц')
+  } finally {
+    loadingWeightTables.value = false
+  }
+}
+
+const handleAttachWeightTable = async () => {
+  if (!selectedWeightTableId.value || !weightTableDept.value) return
+  saving.value = true
+  try {
+    await organizationsApi.attachWeightTable(
+      route.params.id,
+      weightTableDept.value.id,
+      selectedWeightTableId.value
+    )
+    ElMessage.success('Весовая таблица привязана')
+    showWeightTableDialog.value = false
+    await loadOrganization()
+    if (expandedDepts.value[weightTableDept.value.id]) {
+      await loadDeptParticipants(weightTableDept.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || 'Ошибка привязки весовой таблицы')
+  } finally {
+    saving.value = false
+  }
+}
+
+const handleDetachWeightTable = async () => {
+  if (!weightTableDept.value) return
+  saving.value = true
+  try {
+    await organizationsApi.attachWeightTable(
+      route.params.id,
+      weightTableDept.value.id,
+      null
+    )
+    ElMessage.success('Весовая таблица отвязана')
+    showWeightTableDialog.value = false
+    await loadOrganization()
+    if (expandedDepts.value[weightTableDept.value.id]) {
+      await loadDeptParticipants(weightTableDept.value.id)
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || 'Ошибка отвязки весовой таблицы')
+  } finally {
+    saving.value = false
+  }
+}
+
+const handleCalculateScores = async (dept) => {
+  calculatingScores.value[dept.id] = true
+  try {
+    const result = await organizationsApi.calculateDepartmentScores(route.params.id, dept.id)
+    ElMessage.success(`Рассчитано: ${result.calculated}` + (result.errors?.length ? `, ошибок: ${result.errors.length}` : ''))
+    await loadDeptParticipants(dept.id)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || 'Ошибка расчёта')
+  } finally {
+    calculatingScores.value[dept.id] = false
+  }
+}
+
 // --- Participants ---
 
 const toggleDeptExpand = async (deptId) => {
@@ -620,7 +833,13 @@ const toggleDeptExpand = async (deptId) => {
 const loadDeptParticipants = async (deptId) => {
   loadingParticipants.value[deptId] = true
   try {
-    const data = await organizationsApi.listDepartmentParticipants(route.params.id, deptId)
+    const dept = organization.value?.departments?.find(d => d.id === deptId)
+    let data
+    if (dept?.weight_table_id) {
+      data = await organizationsApi.listDepartmentParticipantsWithScores(route.params.id, deptId)
+    } else {
+      data = await organizationsApi.listDepartmentParticipants(route.params.id, deptId)
+    }
     deptParticipants.value[deptId] = data
   } catch (error) {
     ElMessage.error('Ошибка загрузки участников отдела')
@@ -864,6 +1083,7 @@ onMounted(async () => {
   gap: var(--spacing-sm);
   cursor: pointer;
   user-select: none;
+  flex-wrap: wrap;
 }
 
 .dept-title:hover .dept-name {
@@ -901,6 +1121,16 @@ onMounted(async () => {
 
 .dept-participants {
   padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+}
+
+.scores-toolbar {
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.text-muted {
+  color: var(--color-text-secondary);
 }
 
 /* Participant search list in drawer */

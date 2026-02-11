@@ -75,5 +75,29 @@ export const organizationsApi = {
       { data: { participant_id: participantId } }
     )
     return response.data
+  },
+
+  // --- Weight table ---
+
+  async attachWeightTable(orgId, deptId, weightTableId) {
+    const response = await apiClient.put(
+      `/organizations/${orgId}/departments/${deptId}/weight-table`,
+      { weight_table_id: weightTableId }
+    )
+    return response.data
+  },
+
+  async listDepartmentParticipantsWithScores(orgId, deptId) {
+    const response = await apiClient.get(
+      `/organizations/${orgId}/departments/${deptId}/participants/scores`
+    )
+    return response.data
+  },
+
+  async calculateDepartmentScores(orgId, deptId) {
+    const response = await apiClient.post(
+      `/organizations/${orgId}/departments/${deptId}/calculate-scores`
+    )
+    return response.data
   }
 }

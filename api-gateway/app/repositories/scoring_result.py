@@ -48,6 +48,22 @@ class ScoringResultRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_participants_and_weight_table(
+        self, participant_ids: list[UUID], weight_table_id: UUID
+    ) -> dict[UUID, ScoringResult]:
+        """Batch fetch scoring results for multiple participants and one weight table."""
+        if not participant_ids:
+            return {}
+        result = await self.db.execute(
+            select(ScoringResult).where(
+                and_(
+                    ScoringResult.participant_id.in_(participant_ids),
+                    ScoringResult.weight_table_id == weight_table_id,
+                )
+            )
+        )
+        return {sr.participant_id: sr for sr in result.scalars().all()}
+
     async def list_by_weight_table(self, weight_table_id: UUID) -> list[ScoringResult]:
         """List all scoring results for a weight table."""
         result = await self.db.execute(

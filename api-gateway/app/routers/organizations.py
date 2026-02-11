@@ -12,6 +12,7 @@ from app.db.models import User
 from app.db.session import get_db
 from app.schemas.organization import (
     AttachParticipantsRequest,
+    AttachWeightTableRequest,
     DepartmentCreateRequest,
     DepartmentListResponse,
     DepartmentResponse,
@@ -22,6 +23,7 @@ from app.schemas.organization import (
     OrganizationListResponse,
     OrganizationResponse,
     OrganizationUpdateRequest,
+    ParticipantWithSuitabilityResponse,
 )
 from app.schemas.participant import MessageResponse, ParticipantResponse
 from app.services.organization import OrganizationService
@@ -172,3 +174,42 @@ async def detach_participant(
     service = OrganizationService(db)
     await service.detach_participant(org_id, dept_id, request.participant_id)
     return MessageResponse(message="Участник отвязан от отдела")
+
+
+# --- Weight table attachment ---
+
+@router.put("/{org_id}/departments/{dept_id}/weight-table", response_model=DepartmentResponse)
+async def attach_weight_table(
+    org_id: UUID,
+    dept_id: UUID,
+    request: AttachWeightTableRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = OrganizationService(db)
+    return await service.attach_weight_table(org_id, dept_id, request)
+
+
+@router.get(
+    "/{org_id}/departments/{dept_id}/participants/scores",
+    response_model=list[ParticipantWithSuitabilityResponse],
+)
+async def list_department_participants_with_scores(
+    org_id: UUID,
+    dept_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = OrganizationService(db)
+    return await service.list_department_participants_with_scores(org_id, dept_id)
+
+
+@router.post("/{org_id}/departments/{dept_id}/calculate-scores")
+async def calculate_department_scores(
+    org_id: UUID,
+    dept_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = OrganizationService(db)
+    return await service.calculate_department_scores(org_id, dept_id)

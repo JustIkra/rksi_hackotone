@@ -1,0 +1,1 @@
+import{m as s,H as r,T as d}from"./index-CLa57XdF.js";function u(e,n){let o=0;return function(...t){const i=Date.now();i-o>=n&&(o=i,e.apply(this,t))}}function w(e=768){const n=s(window.innerWidth<=e),t=u(()=>{n.value=window.innerWidth<=e},100);return r(()=>window.addEventListener("resize",t)),d(()=>window.removeEventListener("resize",t)),{isMobile:n}}export{w as u};
